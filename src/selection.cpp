@@ -182,7 +182,329 @@ vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, 
 	return out;
 }
 
+// ---------------------------------------------------------------- P7 --
+
+struct Portfolio {
+	vector<double> weights;
+	double expected_return = 0;
+	double volatility = 0;
+	double sharpe = 0;
+};
+
+double PortfolioVariance(const vector<double> &cov, idx_t n, const vector<double> &w) {
+	double v = 0;
+	for (idx_t i = 0; i < n; i++) {
+		if (w[i] == 0) {
+			continue;
+		}
+		for (idx_t j = 0; j < n; j++) {
+			v += w[i] * w[j] * cov[i * n + j];
+		}
+	}
+	return v;
+}
+
+Portfolio ScorePortfolio(const vector<double> &ret, const vector<double> &cov, idx_t n,
+                         vector<double> w) {
+	Portfolio p;
+	p.weights = std::move(w);
+	for (idx_t i = 0; i < n; i++) {
+		p.expected_return += p.weights[i] * ret[i];
+	}
+	p.volatility = std::sqrt(std::max(0.0, PortfolioVariance(cov, n, p.weights)));
+	p.sharpe = p.volatility > 1e-12 ? p.expected_return / p.volatility : 0.0;
+	return p;
+}
+
+//! Project onto {sum w = 1, 0 <= w <= cap} over a fixed support.
+vector<double> ProjectWeights(vector<double> w, const vector<idx_t> &support, double cap) {
+	for (int iter = 0; iter < 200; iter++) {
+		double total = 0;
+		for (auto i : support) {
+			w[i] = std::min(cap, std::max(0.0, w[i]));
+			total += w[i];
+		}
+		if (std::fabs(total - 1.0) < 1e-12) {
+			break;
+		}
+		const double adjust = (1.0 - total) / static_cast<double>(support.size());
+		for (auto i : support) {
+			w[i] += adjust;
+		}
+	}
+	return w;
+}
+
+//! Maximise Sharpe over a FIXED support by projected gradient ascent.
+Portfolio OptimiseSupport(const vector<double> &ret, const vector<double> &cov, idx_t n,
+                          const vector<idx_t> &support, double cap) {
+	vector<double> w(n, 0.0);
+	for (auto i : support) {
+		w[i] = 1.0 / static_cast<double>(support.size());
+	}
+	w = ProjectWeights(std::move(w), support, cap);
+	double step = 0.05;
+	auto best = ScorePortfolio(ret, cov, n, w);
+	for (int iter = 0; iter < 400; iter++) {
+		const double var = std::max(1e-18, PortfolioVariance(cov, n, w));
+		const double vol = std::sqrt(var);
+		const double mu = best.expected_return;
+		vector<double> grad(n, 0.0);
+		for (auto i : support) {
+			double cw = 0;
+			for (idx_t j = 0; j < n; j++) {
+				cw += cov[i * n + j] * w[j];
+			}
+			grad[i] = ret[i] / vol - mu * cw / (var * vol);
+		}
+		auto trial = w;
+		for (auto i : support) {
+			trial[i] += step * grad[i];
+		}
+		trial = ProjectWeights(std::move(trial), support, cap);
+		auto scored = ScorePortfolio(ret, cov, n, trial);
+		if (scored.sharpe > best.sharpe) {
+			best = scored;
+			w = std::move(trial);
+		} else {
+			step *= 0.7;
+			if (step < 1e-9) {
+				break;
+			}
+		}
+	}
+	return best;
+}
+
+vector<idx_t> TopKByReturn(const vector<double> &ret, idx_t n, idx_t k) {
+	vector<idx_t> order(n);
+	std::iota(order.begin(), order.end(), 0);
+	std::stable_sort(order.begin(), order.end(), [&](idx_t a, idx_t b) { return ret[a] > ret[b]; });
+	order.resize(std::min(k, n));
+	return order;
+}
+
+//! Top-K by expected return, equally weighted. Ignores covariance
+//! entirely, so it happily buys K assets that all move together.
+Portfolio TopReturnEqualWeight(const vector<double> &ret, const vector<double> &cov, idx_t n,
+                               idx_t k, double cap) {
+	auto support = TopKByReturn(ret, n, k);
+	if (support.empty()) {
+		return Portfolio {vector<double>(n, 0.0), 0, 0, 0};
+	}
+	vector<double> w(n, 0.0);
+	for (auto i : support) {
+		w[i] = 1.0 / static_cast<double>(support.size());
+	}
+	return ScorePortfolio(ret, cov, n, ProjectWeights(std::move(w), support, cap));
+}
+
+//! Top-K by return, then optimise the WEIGHTS on that support.
+Portfolio TopReturnOptimised(const vector<double> &ret, const vector<double> &cov, idx_t n, idx_t k,
+                             double cap) {
+	auto support = TopKByReturn(ret, n, k);
+	if (support.empty()) {
+		return Portfolio {vector<double>(n, 0.0), 0, 0, 0};
+	}
+	return OptimiseSupport(ret, cov, n, support, cap);
+}
+
+//! Grow the support greedily by whichever asset most improves Sharpe
+//! after re-optimising weights — so it can pick a lower-return asset
+//! that diversifies. This is the member that uses the covariance.
+Portfolio GreedySharpe(const vector<double> &ret, const vector<double> &cov, idx_t n, idx_t k,
+                       double cap) {
+	const idx_t limit = std::min(k, n);
+	if (limit == 0) {
+		return Portfolio {vector<double>(n, 0.0), 0, 0, 0};
+	}
+	// Weights sum to 1 and none may exceed `cap`, so no support smaller
+	// than ceil(1/cap) can hold a feasible portfolio at all. Sharpe is
+	// meaningless below that size, so the set is grown by expected return
+	// until it is feasible and only then greedily on Sharpe.
+	//
+	// Testing feasibility on every INTERMEDIATE support instead skipped
+	// every single-asset candidate on the first step and returned an
+	// empty portfolio scoring 0 — caught by the family-spread check.
+	const idx_t min_support =
+	    static_cast<idx_t>(std::ceil(1.0 / cap - 1e-9));
+	vector<idx_t> support;
+	auto by_return = TopKByReturn(ret, n, n);
+	for (auto i : by_return) {
+		if (support.size() >= std::min(min_support, limit)) {
+			break;
+		}
+		support.push_back(i);
+	}
+	if (support.size() < min_support) {
+		// Cannot be made feasible within the holding limit; the caller-facing
+		// guard rejects this before we get here, so this is defence only.
+		return Portfolio {vector<double>(n, 0.0), 0, 0, 0};
+	}
+	Portfolio best = OptimiseSupport(ret, cov, n, support, cap);
+
+	while (support.size() < limit) {
+		idx_t best_add = n;
+		Portfolio best_trial = best;
+		for (idx_t i = 0; i < n; i++) {
+			if (std::find(support.begin(), support.end(), i) != support.end()) {
+				continue;
+			}
+			auto trial_support = support;
+			trial_support.push_back(i);
+			auto trial = OptimiseSupport(ret, cov, n, trial_support, cap);
+			if (trial.sharpe > best_trial.sharpe + 1e-12) {
+				best_trial = trial;
+				best_add = i;
+			}
+		}
+		if (best_add == n) {
+			break;
+		}
+		support.push_back(best_add);
+		best = best_trial;
+	}
+
+	// Then SWAP: replace a held asset with an unheld one while that
+	// improves Sharpe. Growth alone is not enough — when the holding
+	// limit equals the minimum feasible support (k=2 at a 0.6 cap, say)
+	// there is no room to grow, so a purely additive greedy can only ever
+	// return its return-ranked seed and ties the naive member exactly.
+	// Substitution is what lets it drop a high-return asset for a hedge.
+	bool improved = true;
+	while (improved) {
+		improved = false;
+		for (idx_t si = 0; si < support.size() && !improved; si++) {
+			for (idx_t j = 0; j < n; j++) {
+				if (std::find(support.begin(), support.end(), j) != support.end()) {
+					continue;
+				}
+				auto trial_support = support;
+				trial_support[si] = j;
+				auto trial = OptimiseSupport(ret, cov, n, trial_support, cap);
+				if (trial.sharpe > best.sharpe + 1e-12) {
+					support = std::move(trial_support);
+					best = trial;
+					improved = true;
+					break;
+				}
+			}
+		}
+	}
+	return best;
+}
+
+Portfolio BestOfPortfolio(const vector<double> &ret, const vector<double> &cov, idx_t n, idx_t k,
+                          double cap) {
+	auto best = GreedySharpe(ret, cov, n, k, cap);
+	for (auto c : {TopReturnOptimised(ret, cov, n, k, cap),
+	               TopReturnEqualWeight(ret, cov, n, k, cap)}) {
+		if (c.sharpe > best.sharpe) {
+			best = c;
+		}
+	}
+	return best;
+}
+
 } // namespace
+
+static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
+                                 Portfolio (*fn)(const vector<double> &, const vector<double> &,
+                                                 idx_t, idx_t, double),
+                                 const string &description, const string &example) {
+	auto return_type = LogicalType::STRUCT({{"weights", LogicalType::LIST(LogicalType::DOUBLE)},
+	                                        {"expected_return", LogicalType::DOUBLE},
+	                                        {"volatility", LogicalType::DOUBLE},
+	                                        {"sharpe", LogicalType::DOUBLE}});
+	ScalarFunction function(
+	    name,
+	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
+	     LogicalType::BIGINT, LogicalType::DOUBLE},
+	    return_type, [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
+#ifdef ANOFOX_TELEMETRY_ENABLED
+		    PostHogTelemetry::Instance().RecordFunctionCall(name);
+#endif
+		    const idx_t count = args.size();
+		    result.SetVectorType(VectorType::FLAT_VECTOR);
+		    UnifiedVectorFormat k_data, cap_data;
+		    args.data[2].ToUnifiedFormat(count, k_data);
+		    args.data[3].ToUnifiedFormat(count, cap_data);
+		    auto ks = UnifiedVectorFormat::GetData<int64_t>(k_data);
+		    auto caps = UnifiedVectorFormat::GetData<double>(cap_data);
+
+		    auto &entries = StructVector::GetEntries(result);
+		    auto &w_vec = *entries[0];
+		    auto w_out = FlatVector::GetData<list_entry_t>(w_vec);
+		    auto ret_out = FlatVector::GetData<double>(*entries[1]);
+		    auto vol_out = FlatVector::GetData<double>(*entries[2]);
+		    auto sharpe_out = FlatVector::GetData<double>(*entries[3]);
+		    idx_t offset = 0;
+
+		    for (idx_t row = 0; row < count; row++) {
+			    const auto ki = k_data.sel->get_index(row);
+			    const auto ci = cap_data.sel->get_index(row);
+			    if (!k_data.validity.RowIsValid(ki) || !cap_data.validity.RowIsValid(ci)) {
+				    FlatVector::SetNull(result, row, true);
+				    w_out[row].offset = offset;
+				    w_out[row].length = 0;
+				    ret_out[row] = vol_out[row] = sharpe_out[row] = 0;
+				    continue;
+			    }
+			    if (ks[ki] < 0) {
+				    throw InvalidInputException("max_holdings must be >= 0, got %lld",
+				                                static_cast<long long>(ks[ki]));
+			    }
+			    const double cap = caps[ci];
+			    if (!std::isfinite(cap) || cap <= 0 || cap > 1.0) {
+				    throw InvalidInputException(
+				        "max_position_size must be in (0,1], got %f — weights sum to 1, so a "
+				        "cap outside that range is either unsatisfiable or no constraint",
+				        cap);
+			    }
+			    auto ret = ReadDoubles(args.data[0], count, row, "expected_returns", 0);
+			    const idx_t n = ret.size();
+			    auto cov = ReadDoubles(args.data[1], count, row, "covariance matrix", n * n);
+			    const idx_t k = static_cast<idx_t>(ks[ki]);
+			    if (n > 0 && static_cast<double>(std::min(k, n)) * cap < 1.0 - 1e-12) {
+				    throw InvalidInputException(
+				        "max_holdings %llu at max_position_size %f can hold at most %f of the "
+				        "portfolio — weights must sum to 1, so no feasible portfolio exists",
+				        static_cast<uint64_t>(k), cap, static_cast<double>(std::min(k, n)) * cap);
+			    }
+
+			    const auto p = n == 0 ? Portfolio {} : fn(ret, cov, n, k, cap);
+			    ret_out[row] = p.expected_return;
+			    vol_out[row] = p.volatility;
+			    sharpe_out[row] = p.sharpe;
+			    w_out[row].offset = offset;
+			    w_out[row].length = p.weights.size();
+			    ListVector::Reserve(w_vec, offset + p.weights.size());
+			    auto child = FlatVector::GetData<double>(ListVector::GetEntry(w_vec));
+			    for (idx_t i = 0; i < p.weights.size(); i++) {
+				    child[offset + i] = p.weights[i];
+			    }
+			    offset += p.weights.size();
+		    }
+		    FlatVector::Validity(ListVector::GetEntry(w_vec)).SetAllValid(offset);
+		    ListVector::SetListSize(w_vec, offset);
+	    });
+
+	FunctionDescription desc;
+	desc.description = description;
+	desc.examples.push_back(example);
+	CreateScalarFunctionInfo info(function);
+	info.descriptions.push_back(std::move(desc));
+	loader.RegisterFunction(std::move(info));
+}
+
+static void AddPortfolioFamily(ExtensionLoader &loader, const string &short_name,
+                               Portfolio (*fn)(const vector<double> &, const vector<double> &,
+                                               idx_t, idx_t, double),
+                               const string &description, const string &example) {
+	AddPortfolioFunction(loader, "anofox_optimize_" + short_name, fn, description,
+	                     "anofox_optimize_" + example);
+	AddPortfolioFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+}
 
 static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
                                   Assortment (*fn)(const vector<double> &, const vector<double> &,
@@ -299,6 +621,39 @@ void RegisterSelectionFunctions(ExtensionLoader &loader) {
 	                    "Runs every assortment algorithm in this family and returns whichever "
 	                    "captured the most margin." + shape,
 	                    "assortment_best_of" + ex);
+
+	const string pshape =
+	    " Takes expected_returns (one per asset) and the covariance matrix flattened "
+	    "ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights "
+	    "sum to 1 over the chosen assets. Returns the weight vector, expected return, "
+	    "volatility and Sharpe ratio (return/volatility).";
+	const string pex = "([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)";
+
+	AddPortfolioFamily(loader, "portfolio_top_return", TopReturnEqualWeight,
+	                   "Picks the highest-expected-return assets up to the holding limit and "
+	                   "weights them EQUALLY, ignoring covariance entirely — so it will "
+	                   "happily buy assets that all move together. The naive rule, included "
+	                   "so a search has something to beat." + pshape,
+	                   "portfolio_top_return" + pex);
+	AddPortfolioFamily(loader, "portfolio_top_return_optimised", TopReturnOptimised,
+	                   "Picks the highest-expected-return assets up to the holding limit, then "
+	                   "OPTIMISES THE WEIGHTS on that fixed set by projected gradient ascent "
+	                   "on Sharpe. Better than equal weighting, but still cannot choose a "
+	                   "lower-return asset that would diversify." + pshape,
+	                   "portfolio_top_return_optimised" + pex);
+	AddPortfolioFamily(loader, "portfolio_greedy_sharpe", GreedySharpe,
+	                   "Grows the holding set one asset at a time, each time adding whichever "
+	                   "most improves Sharpe AFTER re-optimising the weights — so it can pick "
+	                   "a lower-return asset because it diversifies — then SWAPS held assets "
+	                   "for unheld ones while that improves Sharpe, which is what lets it "
+	                   "choose a different set when the holding limit leaves no room to grow. "
+	                   "The member that actually uses the covariance to choose WHICH assets, "
+	                   "not just how much of them." + pshape,
+	                   "portfolio_greedy_sharpe" + pex);
+	AddPortfolioFamily(loader, "portfolio_best_of", BestOfPortfolio,
+	                   "Runs every portfolio algorithm in this family and returns whichever "
+	                   "achieved the highest Sharpe ratio." + pshape,
+	                   "portfolio_best_of" + pex);
 }
 
 } // namespace duckdb

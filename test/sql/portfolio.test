@@ -1,0 +1,69 @@
+# name: test/sql/portfolio.test
+# description: cardinality-constrained portfolio selection (P7's objective)
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# Two high-return assets that move TOGETHER (cov 0.036) and one lower-
+# return asset that hedges both (cov -0.01). Picking by return alone buys
+# the correlated pair; using the covariance picks a hedge instead. If no
+# member beats top-return the family is decorative.
+statement ok
+CREATE TABLE p AS SELECT
+  [0.12, 0.12, 0.10]::DOUBLE[] AS r,
+  [0.04, 0.036, -0.01,
+   0.036, 0.04, -0.01,
+   -0.01, -0.01, 0.04]::DOUBLE[] AS cov,
+  2::BIGINT AS k, 0.6::DOUBLE AS cap;
+
+# Real SPREAD: the covariance-aware member beats the naive one.
+query I
+SELECT opt_portfolio_greedy_sharpe(r,cov,k,cap).sharpe
+       > opt_portfolio_top_return(r,cov,k,cap).sharpe FROM p;
+----
+true
+
+# Every member returns a FEASIBLE portfolio: weights sum to 1, none
+# exceeds the cap, none is negative, and no more than k are held. A
+# member that quietly broke any of these would win an optimising search.
+query I
+WITH x AS (
+  SELECT 'top_return' a, opt_portfolio_top_return(r,cov,k,cap) v, k, cap FROM p
+  UNION ALL SELECT 'top_opt', opt_portfolio_top_return_optimised(r,cov,k,cap), k, cap FROM p
+  UNION ALL SELECT 'greedy', opt_portfolio_greedy_sharpe(r,cov,k,cap), k, cap FROM p
+  UNION ALL SELECT 'best_of', opt_portfolio_best_of(r,cov,k,cap), k, cap FROM p
+)
+SELECT count(*) FROM x
+WHERE abs(list_sum(v.weights) - 1.0) > 1e-6
+   OR list_max(v.weights) > cap + 1e-9
+   OR list_min(v.weights) < -1e-9
+   OR list_count(list_filter(v.weights, w -> w > 1e-9)) > k;
+----
+0
+
+# Volatility must be consistent with the weights, not asserted. A member
+# reporting a Sharpe it did not achieve would win immediately.
+query I
+WITH x AS (SELECT opt_portfolio_best_of(r,cov,k,cap) v, r, cov FROM p)
+SELECT count(*) FROM x WHERE abs(v.sharpe * v.volatility - v.expected_return) > 1e-6;
+----
+0
+
+# best_of never loses to a member it contains.
+query I
+SELECT opt_portfolio_best_of(r,cov,k,cap).sharpe
+       >= opt_portfolio_top_return(r,cov,k,cap).sharpe FROM p;
+----
+true
+
+# An infeasible cardinality/cap combination is a caller error: 2 assets
+# capped at 0.3 can hold only 60% of a portfolio that must sum to 1.
+statement error
+SELECT opt_portfolio_top_return(r, cov, 2, 0.3) FROM p;
+----
+no feasible portfolio exists
+
+statement error
+SELECT opt_portfolio_top_return(r, cov, 2, 1.5) FROM p;
+----
+must be in (0,1]

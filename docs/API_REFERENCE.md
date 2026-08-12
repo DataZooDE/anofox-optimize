@@ -123,6 +123,38 @@ Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST 
 
 Example: `anofox_optimize_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
+## anofox_optimize_portfolio_best_of
+
+`anofox_optimize_portfolio_best_of(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Runs every portfolio algorithm in this family and returns whichever achieved the highest Sharpe ratio. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `anofox_optimize_portfolio_best_of([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## anofox_optimize_portfolio_greedy_sharpe
+
+`anofox_optimize_portfolio_greedy_sharpe(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Grows the holding set one asset at a time, each time adding whichever most improves Sharpe AFTER re-optimising the weights — so it can pick a lower-return asset because it diversifies — then SWAPS held assets for unheld ones while that improves Sharpe, which is what lets it choose a different set when the holding limit leaves no room to grow. The member that actually uses the covariance to choose WHICH assets, not just how much of them. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `anofox_optimize_portfolio_greedy_sharpe([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## anofox_optimize_portfolio_top_return
+
+`anofox_optimize_portfolio_top_return(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Picks the highest-expected-return assets up to the holding limit and weights them EQUALLY, ignoring covariance entirely — so it will happily buy assets that all move together. The naive rule, included so a search has something to beat. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `anofox_optimize_portfolio_top_return([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## anofox_optimize_portfolio_top_return_optimised
+
+`anofox_optimize_portfolio_top_return_optimised(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Picks the highest-expected-return assets up to the holding limit, then OPTIMISES THE WEIGHTS on that fixed set by projected gradient ascent on Sharpe. Better than equal weighting, but still cannot choose a lower-return asset that would diversify. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `anofox_optimize_portfolio_top_return_optimised([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
 ## anofox_optimize_schedule_atcs
 
 `anofox_optimize_schedule_atcs(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
@@ -362,6 +394,38 @@ Example: `opt_pack_next_fit([4.0, 8.0, 1.0], 10.0)`
 Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than best-fit but produces balanced loads. Same signature as the other packing functions.
 
 Example: `opt_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
+
+## opt_portfolio_best_of
+
+`opt_portfolio_best_of(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Runs every portfolio algorithm in this family and returns whichever achieved the highest Sharpe ratio. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `opt_portfolio_best_of([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## opt_portfolio_greedy_sharpe
+
+`opt_portfolio_greedy_sharpe(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Grows the holding set one asset at a time, each time adding whichever most improves Sharpe AFTER re-optimising the weights — so it can pick a lower-return asset because it diversifies — then SWAPS held assets for unheld ones while that improves Sharpe, which is what lets it choose a different set when the holding limit leaves no room to grow. The member that actually uses the covariance to choose WHICH assets, not just how much of them. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `opt_portfolio_greedy_sharpe([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## opt_portfolio_top_return
+
+`opt_portfolio_top_return(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Picks the highest-expected-return assets up to the holding limit and weights them EQUALLY, ignoring covariance entirely — so it will happily buy assets that all move together. The naive rule, included so a search has something to beat. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `opt_portfolio_top_return([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## opt_portfolio_top_return_optimised
+
+`opt_portfolio_top_return_optimised(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
+
+Picks the highest-expected-return assets up to the holding limit, then OPTIMISES THE WEIGHTS on that fixed set by projected gradient ascent on Sharpe. Better than equal weighting, but still cannot choose a lower-return asset that would diversify. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
+
+Example: `opt_portfolio_top_return_optimised([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
 
 ## opt_schedule_atcs
 
