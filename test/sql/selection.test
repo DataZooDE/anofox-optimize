@@ -1,5 +1,5 @@
 # name: test/sql/selection.test
-# description: assortment selection under cannibalisation (P5's objective)
+# description: assortment selection — cannibalisation AND recapture economics
 # group: [anofox_optimize]
 
 require anofox_optimize
@@ -54,3 +54,79 @@ statement error
 SELECT opt_assortment_top_margin([1.0]::DOUBLE[], [1.0]::DOUBLE[], [1.5]::DOUBLE[], 1);
 ----
 must be in [0,1]
+
+# --------------------------------------------------------------- recapture --
+# The recapture family exists because the cannibalisation family answers a
+# DIFFERENT question, and a caller who picks the wrong one gets a confidently
+# wrong shelf. These pin the difference so neither can drift into the other.
+
+statement ok
+CREATE TABLE r AS SELECT
+  [0.62,1.37,3.09,0.65,0.83,2.24,0.53,1.41,1.49,1.51,2.93,4.94,4.63,3.96]::DOUBLE[] AS m,
+  [170.2,155.2,86.6,188.0,107.9,113.8,23.5,68.1,196.9,99.7,101.6,29.0,69.0,28.4]::DOUBLE[] AS d,
+  opt_matrix_from_triples(
+    [0,0,1,2,3,3,3,4,4,4,5,5,6,6,6,7,8,9,10,11,12,13,13],
+    [13,11,7,13,11,7,13,13,2,7,1,4,2,11,0,1,12,1,5,4,2,9,10],
+    [0.27,0.47,0.65,0.89,0.33,0.43,0.76,0.74,0.62,0.46,0.78,0.86,0.45,0.75,0.7,
+     0.58,0.42,0.63,0.41,0.67,0.42,0.48,0.83]::DOUBLE[], 14, 0) AS s,
+  5 AS k;
+
+# Reaches the exact optimum, found by exhaustive enumeration over all subsets
+# of size <= 5 in an independent script: 3888.0690, listing products
+# [2,11,12,13,14] (1-based).
+query I
+SELECT round(opt_assortment_recapture_best_of(m,d,s,k).captured_margin, 4) FROM r;
+----
+3888.0691
+
+query I
+SELECT opt_assortment_recapture_best_of(m,d,s,k).listed FROM r;
+----
+[false, true, false, false, false, false, false, false, false, false, true, true, true, true]
+
+# The naive rule must be BEATEN, not tied — otherwise this fixture cannot
+# tell the family from a ranking. Independent script: naive = 1741.5025.
+query I
+SELECT opt_assortment_recapture_best_of(m,d,s,k).captured_margin
+       > opt_assortment_recapture_top_margin(m,d,s,k).captured_margin FROM r;
+----
+true
+
+# The regression this family was built for: the cannibalisation family scores
+# the SAME shelf far lower, because it models the opposite economics. Using it
+# on a delisting problem cost 63% of the achievable margin in a live search.
+query I
+SELECT opt_assortment_recapture_best_of(m,d,s,k).captured_margin
+       > opt_assortment_best_of(m,d,s,k).captured_margin FROM r;
+----
+true
+
+# The two families must not silently agree — if they ever return the same
+# shelf on this instance, one of them has drifted.
+query I
+SELECT opt_assortment_recapture_best_of(m,d,s,k).listed
+       != opt_assortment_best_of(m,d,s,k).listed FROM r;
+----
+true
+
+# Spread within the family: a search needs the members to disagree.
+query I
+SELECT count(DISTINCT captured_margin) > 1 FROM (
+  SELECT opt_assortment_recapture_top_margin(m,d,s,k).captured_margin AS captured_margin FROM r
+  UNION ALL SELECT opt_assortment_recapture_greedy_marginal(m,d,s,k).captured_margin FROM r
+  UNION ALL SELECT opt_assortment_recapture_local_search(m,d,s,k).captured_margin FROM r
+);
+----
+true
+
+# Never exceeds the shelf limit.
+query I
+SELECT list_count(list_filter(opt_assortment_recapture_best_of(m,d,s,k).listed, x -> x)) <= k FROM r;
+----
+true
+
+# An empty shelf recaptures nothing — delisted demand needs a listed sink.
+query I
+SELECT opt_assortment_recapture_best_of(m,d,s,0).captured_margin FROM r;
+----
+0.0

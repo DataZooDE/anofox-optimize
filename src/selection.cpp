@@ -25,9 +25,18 @@ struct Assortment {
 	double captured_margin = 0;
 };
 
-//! Captured margin of a listed set: each listed product earns
-//! margin * (base_demand - demand lost to the other listed products).
-//! The quadratic term is what a separable knapsack cannot represent.
+//! An assortment objective: what a listed set is worth. Two genuinely
+//! different real decisions share this shape, and they are close to
+//! opposites, so which one a caller wants is never inferable from the
+//! inputs — the caller picks by choosing a function family.
+using AssortmentObjective = double (*)(const vector<double> &, const vector<double> &,
+                                       const vector<double> &, idx_t, const vector<bool> &);
+
+//! CANNIBALISATION objective: each listed product earns
+//! margin * (base_demand - demand lost to the OTHER LISTED products).
+//! The decision is "these products steal from each other, so do not
+//! shelf near-duplicates". The quadratic term is what a separable
+//! knapsack cannot represent.
 double CapturedMargin(const vector<double> &margin, const vector<double> &demand,
                       const vector<double> &sub, idx_t n, const vector<bool> &listed) {
 	double total = 0;
@@ -46,10 +55,44 @@ double CapturedMargin(const vector<double> &margin, const vector<double> &demand
 	return total;
 }
 
-Assortment Score(const vector<double> &margin, const vector<double> &demand,
-                 const vector<double> &sub, idx_t n, vector<bool> listed) {
+//! RECAPTURE objective: every listed product keeps its own margin *
+//! base_demand in full, and additionally earns the demand that DELISTED
+//! products hand to it, captured at the LISTED product's own margin.
+//! The decision is "we must drop products; which survivors soak up the
+//! orphaned demand most profitably".
+//!
+//! This is not a variant of the cannibalisation objective, it is close
+//! to its opposite: there, listed neighbours are a liability; here, a
+//! listed product is worth MORE when the products it substitutes for are
+//! delisted. A high-margin, low-demand product can be worth listing
+//! purely as a recapture sink — which is precisely the choice a
+//! margin*demand ranking cannot see.
+double RecapturedMargin(const vector<double> &margin, const vector<double> &demand,
+                        const vector<double> &sub, idx_t n, const vector<bool> &listed) {
+	double total = 0;
+	for (idx_t i = 0; i < n; i++) {
+		if (listed[i]) {
+			total += margin[i] * demand[i];
+		}
+	}
+	for (idx_t j = 0; j < n; j++) {
+		if (listed[j]) {
+			continue;
+		}
+		for (idx_t i = 0; i < n; i++) {
+			if (i != j && listed[i]) {
+				total += demand[j] * sub[j * n + i] * margin[i];
+			}
+		}
+	}
+	return total;
+}
+
+Assortment Score(AssortmentObjective obj, const vector<double> &margin,
+                 const vector<double> &demand, const vector<double> &sub, idx_t n,
+                 vector<bool> listed) {
 	Assortment a;
-	a.captured_margin = CapturedMargin(margin, demand, sub, n, listed);
+	a.captured_margin = obj(margin, demand, sub, n, listed);
 	a.listed = std::move(listed);
 	return a;
 }
@@ -57,8 +100,9 @@ Assortment Score(const vector<double> &margin, const vector<double> &demand,
 //! Top-K by standalone margin*demand, ignoring cannibalisation. The
 //! obvious rule, and the one that overstates its own result — a search
 //! needs it present to have something to beat.
-Assortment TopMargin(const vector<double> &margin, const vector<double> &demand,
-                     const vector<double> &sub, idx_t n, idx_t max_listed) {
+Assortment TopMargin(AssortmentObjective obj, const vector<double> &margin,
+                     const vector<double> &demand, const vector<double> &sub, idx_t n,
+                     idx_t max_listed) {
 	vector<idx_t> order(n);
 	std::iota(order.begin(), order.end(), 0);
 	std::stable_sort(order.begin(), order.end(),
@@ -67,17 +111,21 @@ Assortment TopMargin(const vector<double> &margin, const vector<double> &demand,
 	for (idx_t k = 0; k < std::min(max_listed, n); k++) {
 		listed[order[k]] = true;
 	}
-	return Score(margin, demand, sub, n, std::move(listed));
+	return Score(obj, margin, demand, sub, n, std::move(listed));
 }
 
 //! Add whichever product raises TOTAL captured margin most, accounting
 //! for what it takes from the products already listed. Stops when no
 //! addition helps, even below the shelf limit — listing a pure
 //! cannibaliser loses money.
-Assortment GreedyMarginal(const vector<double> &margin, const vector<double> &demand,
-                          const vector<double> &sub, idx_t n, idx_t max_listed) {
+Assortment GreedyMarginal(AssortmentObjective obj, const vector<double> &margin,
+                          const vector<double> &demand, const vector<double> &sub, idx_t n,
+                          idx_t max_listed) {
 	vector<bool> listed(n, false);
-	double best_total = 0;
+	// The empty set is not worth zero under every objective (recapture
+	// pays nothing when nothing is listed, but the baseline must still
+	// come from the objective, not be assumed).
+	double best_total = obj(margin, demand, sub, n, listed);
 	for (idx_t k = 0; k < std::min(max_listed, n); k++) {
 		idx_t best_item = n;
 		double best_gain = 0;
@@ -86,7 +134,7 @@ Assortment GreedyMarginal(const vector<double> &margin, const vector<double> &de
 				continue;
 			}
 			listed[i] = true;
-			const double total = CapturedMargin(margin, demand, sub, n, listed);
+			const double total = obj(margin, demand, sub, n, listed);
 			listed[i] = false;
 			if (total - best_total > best_gain + 1e-12) {
 				best_gain = total - best_total;
@@ -99,13 +147,14 @@ Assortment GreedyMarginal(const vector<double> &margin, const vector<double> &de
 		listed[best_item] = true;
 		best_total += best_gain;
 	}
-	return Score(margin, demand, sub, n, std::move(listed));
+	return Score(obj, margin, demand, sub, n, std::move(listed));
 }
 
 //! Greedy, then swap a listed product for an unlisted one while it helps.
-Assortment SelectionLocalSearch(const vector<double> &margin, const vector<double> &demand,
-                                const vector<double> &sub, idx_t n, idx_t max_listed) {
-	auto best = GreedyMarginal(margin, demand, sub, n, max_listed);
+Assortment SelectionLocalSearch(AssortmentObjective obj, const vector<double> &margin,
+                                const vector<double> &demand, const vector<double> &sub, idx_t n,
+                                idx_t max_listed) {
+	auto best = GreedyMarginal(obj, margin, demand, sub, n, max_listed);
 	bool improved = true;
 	while (improved) {
 		improved = false;
@@ -120,7 +169,7 @@ Assortment SelectionLocalSearch(const vector<double> &margin, const vector<doubl
 				auto trial = best.listed;
 				trial[i] = false;
 				trial[j] = true;
-				const double total = CapturedMargin(margin, demand, sub, n, trial);
+				const double total = obj(margin, demand, sub, n, trial);
 				if (total > best.captured_margin + 1e-12) {
 					best.listed = std::move(trial);
 					best.captured_margin = total;
@@ -133,17 +182,42 @@ Assortment SelectionLocalSearch(const vector<double> &margin, const vector<doubl
 	return best;
 }
 
-Assortment BestOfAssortment(const vector<double> &margin, const vector<double> &demand,
-                            const vector<double> &sub, idx_t n, idx_t max_listed) {
-	auto best = SelectionLocalSearch(margin, demand, sub, n, max_listed);
-	for (auto c : {GreedyMarginal(margin, demand, sub, n, max_listed),
-	               TopMargin(margin, demand, sub, n, max_listed)}) {
+Assortment BestOfAssortment(AssortmentObjective obj, const vector<double> &margin,
+                            const vector<double> &demand, const vector<double> &sub, idx_t n,
+                            idx_t max_listed) {
+	auto best = SelectionLocalSearch(obj, margin, demand, sub, n, max_listed);
+	for (auto c : {GreedyMarginal(obj, margin, demand, sub, n, max_listed),
+	               TopMargin(obj, margin, demand, sub, n, max_listed)}) {
 		if (c.captured_margin > best.captured_margin) {
 			best = c;
 		}
 	}
 	return best;
 }
+
+//! Concrete entry points. Each family binds one objective; the
+//! algorithms above are shared verbatim, so a fix to the search benefits
+//! both models and neither can silently drift from the other.
+#define ANOFOX_ASSORTMENT_BINDING(suffix, objective)                                               \
+	Assortment TopMargin##suffix(const vector<double> &m, const vector<double> &d,                 \
+	                             const vector<double> &s, idx_t n, idx_t k) {                      \
+		return TopMargin(objective, m, d, s, n, k);                                                \
+	}                                                                                              \
+	Assortment GreedyMarginal##suffix(const vector<double> &m, const vector<double> &d,            \
+	                                  const vector<double> &s, idx_t n, idx_t k) {                 \
+		return GreedyMarginal(objective, m, d, s, n, k);                                           \
+	}                                                                                              \
+	Assortment LocalSearch##suffix(const vector<double> &m, const vector<double> &d,               \
+	                               const vector<double> &s, idx_t n, idx_t k) {                    \
+		return SelectionLocalSearch(objective, m, d, s, n, k);                                     \
+	}                                                                                              \
+	Assortment BestOf##suffix(const vector<double> &m, const vector<double> &d,                    \
+	                          const vector<double> &s, idx_t n, idx_t k) {                         \
+		return BestOfAssortment(objective, m, d, s, n, k);                                         \
+	}
+
+ANOFOX_ASSORTMENT_BINDING(Cannibalisation, CapturedMargin)
+ANOFOX_ASSORTMENT_BINDING(Recapture, RecapturedMargin)
 
 vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, idx_t expect) {
 	UnifiedVectorFormat data;
@@ -592,35 +666,78 @@ static void AddAssortmentFamily(ExtensionLoader &loader, const string &short_nam
 }
 
 void RegisterSelectionFunctions(ExtensionLoader &loader) {
-	const string shape =
+	// The two assortment families take IDENTICAL arguments and return an
+	// identical struct, but score a listed set under opposite economics.
+	// Nothing in the data says which one a caller means, so each
+	// description states its model in full rather than deferring to a
+	// shared sentence — picking the wrong family is silent and costly.
+	const string args =
 	    " Takes margins and base_demands (one per product) plus the substitution matrix "
 	    "flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand "
-	    "that moves to product i when BOTH are listed — and a shelf limit. Returns a "
-	    "boolean per product and the total captured margin, where each listed product "
-	    "earns margin * (base_demand minus demand lost to the other listed products).";
+	    "that moves to product i — and a shelf limit. Returns a boolean per product and "
+	    "the resulting captured margin.";
+	const string shape =
+	    " MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus "
+	    "the demand the OTHER LISTED products take from it). Listing near-duplicates "
+	    "destroys value here. If instead you are DELISTING and want the demand of dropped "
+	    "products to flow to the survivors, use the anofox_optimize_assortment_recapture_* "
+	    "family: it answers a different question and the two disagree." +
+	    args;
+	const string rshape =
+	    " MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and "
+	    "additionally earns the demand handed to it by DELISTED products, valued at the "
+	    "LISTED product's own margin. A high-margin, low-demand product can be worth "
+	    "listing purely as a recapture sink, which a margin*demand ranking never selects. "
+	    "If instead listed products erode each other, use the "
+	    "anofox_optimize_assortment_* family: it answers a different question and the two "
+	    "disagree." +
+	    args;
 	const string ex = "([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)";
 
-	AddAssortmentFamily(loader, "assortment_top_margin", TopMargin,
+	AddAssortmentFamily(loader, "assortment_top_margin", TopMarginCannibalisation,
 	                    "Lists the top products by standalone margin*demand, IGNORING "
 	                    "cannibalisation. The obvious rule, and the one that overstates its "
 	                    "own result whenever listed products substitute for each other — "
 	                    "included so a search has something to beat." + shape,
 	                    "assortment_top_margin" + ex);
-	AddAssortmentFamily(loader, "assortment_greedy_marginal", GreedyMarginal,
+	AddAssortmentFamily(loader, "assortment_greedy_marginal", GreedyMarginalCannibalisation,
 	                    "Lists products one at a time, each time adding whichever raises TOTAL "
 	                    "captured margin most given what it takes from the products already "
 	                    "listed. Stops early when no addition helps, even below the shelf "
 	                    "limit: listing a pure cannibaliser loses money." + shape,
 	                    "assortment_greedy_marginal" + ex);
-	AddAssortmentFamily(loader, "assortment_local_search", SelectionLocalSearch,
+	AddAssortmentFamily(loader, "assortment_local_search", LocalSearchCannibalisation,
 	                    "Greedy marginal, then swaps a listed product for an unlisted one "
 	                    "while that raises captured margin. Escapes the greedy ordering, at "
 	                    "O(n^2) evaluations per improving pass." + shape,
 	                    "assortment_local_search" + ex);
-	AddAssortmentFamily(loader, "assortment_best_of", BestOfAssortment,
+	AddAssortmentFamily(loader, "assortment_best_of", BestOfCannibalisation,
 	                    "Runs every assortment algorithm in this family and returns whichever "
 	                    "captured the most margin." + shape,
 	                    "assortment_best_of" + ex);
+
+	AddAssortmentFamily(loader, "assortment_recapture_top_margin", TopMarginRecapture,
+	                    "Lists the top products by standalone margin*base_demand, IGNORING "
+	                    "where delisted demand would go. The obvious rule, and a poor one "
+	                    "here: it never lists a small-demand product that would soak up a "
+	                    "lot of orphaned demand at a high margin. Included so a search has "
+	                    "something to beat." + rshape,
+	                    "assortment_recapture_top_margin" + ex);
+	AddAssortmentFamily(loader, "assortment_recapture_greedy_marginal", GreedyMarginalRecapture,
+	                    "Lists products one at a time, each time adding whichever raises TOTAL "
+	                    "recaptured margin most — which accounts for the demand that product "
+	                    "stops donating to others once it is listed itself. Stops early when "
+	                    "no addition helps, even below the shelf limit." + rshape,
+	                    "assortment_recapture_greedy_marginal" + ex);
+	AddAssortmentFamily(loader, "assortment_recapture_local_search", LocalSearchRecapture,
+	                    "Recapture greedy, then swaps a listed product for an unlisted one "
+	                    "while that raises recaptured margin. Escapes the greedy ordering, at "
+	                    "O(n^2) evaluations per improving pass." + rshape,
+	                    "assortment_recapture_local_search" + ex);
+	AddAssortmentFamily(loader, "assortment_recapture_best_of", BestOfRecapture,
+	                    "Runs every recapture algorithm in this family and returns whichever "
+	                    "recaptured the most margin." + rshape,
+	                    "assortment_recapture_best_of" + ex);
 
 	const string pshape =
 	    " Takes expected_returns (one per asset) and the covariance matrix flattened "

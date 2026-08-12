@@ -7,7 +7,7 @@
 
 `anofox_optimize_assortment_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Runs every assortment algorithm in this family and returns whichever captured the most margin. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Runs every assortment algorithm in this family and returns whichever captured the most margin. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
@@ -15,7 +15,7 @@ Example: `anofox_optimize_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6
 
 `anofox_optimize_assortment_greedy_marginal(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Lists products one at a time, each time adding whichever raises TOTAL captured margin most given what it takes from the products already listed. Stops early when no addition helps, even below the shelf limit: listing a pure cannibaliser loses money. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Lists products one at a time, each time adding whichever raises TOTAL captured margin most given what it takes from the products already listed. Stops early when no addition helps, even below the shelf limit: listing a pure cannibaliser loses money. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
@@ -23,15 +23,47 @@ Example: `anofox_optimize_assortment_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0
 
 `anofox_optimize_assortment_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Greedy marginal, then swaps a listed product for an unlisted one while that raises captured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Greedy marginal, then swaps a listed product for an unlisted one while that raises captured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_best_of
+
+`anofox_optimize_assortment_recapture_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Runs every recapture algorithm in this family and returns whichever recaptured the most margin. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `anofox_optimize_assortment_recapture_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_greedy_marginal
+
+`anofox_optimize_assortment_recapture_greedy_marginal(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Lists products one at a time, each time adding whichever raises TOTAL recaptured margin most — which accounts for the demand that product stops donating to others once it is listed itself. Stops early when no addition helps, even below the shelf limit. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `anofox_optimize_assortment_recapture_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_local_search
+
+`anofox_optimize_assortment_recapture_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Recapture greedy, then swaps a listed product for an unlisted one while that raises recaptured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `anofox_optimize_assortment_recapture_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_top_margin
+
+`anofox_optimize_assortment_recapture_top_margin(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Lists the top products by standalone margin*base_demand, IGNORING where delisted demand would go. The obvious rule, and a poor one here: it never lists a small-demand product that would soak up a lot of orphaned demand at a high margin. Included so a search has something to beat. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `anofox_optimize_assortment_recapture_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
 ## anofox_optimize_assortment_top_margin
 
 `anofox_optimize_assortment_top_margin(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Lists the top products by standalone margin*demand, IGNORING cannibalisation. The obvious rule, and the one that overstates its own result whenever listed products substitute for each other — included so a search has something to beat. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Lists the top products by standalone margin*demand, IGNORING cannibalisation. The obvious rule, and the one that overstates its own result whenever listed products substitute for each other — included so a search has something to beat. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
@@ -287,7 +319,7 @@ Example: `anofox_optimize_wave_priority_first([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
 `opt_assortment_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Runs every assortment algorithm in this family and returns whichever captured the most margin. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Runs every assortment algorithm in this family and returns whichever captured the most margin. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `opt_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
@@ -295,7 +327,7 @@ Example: `opt_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
 `opt_assortment_greedy_marginal(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Lists products one at a time, each time adding whichever raises TOTAL captured margin most given what it takes from the products already listed. Stops early when no addition helps, even below the shelf limit: listing a pure cannibaliser loses money. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Lists products one at a time, each time adding whichever raises TOTAL captured margin most given what it takes from the products already listed. Stops early when no addition helps, even below the shelf limit: listing a pure cannibaliser loses money. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `opt_assortment_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
@@ -303,15 +335,47 @@ Example: `opt_assortment_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0
 
 `opt_assortment_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Greedy marginal, then swaps a listed product for an unlisted one while that raises captured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Greedy marginal, then swaps a listed product for an unlisted one while that raises captured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `opt_assortment_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## opt_assortment_recapture_best_of
+
+`opt_assortment_recapture_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Runs every recapture algorithm in this family and returns whichever recaptured the most margin. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `opt_assortment_recapture_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## opt_assortment_recapture_greedy_marginal
+
+`opt_assortment_recapture_greedy_marginal(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Lists products one at a time, each time adding whichever raises TOTAL recaptured margin most — which accounts for the demand that product stops donating to others once it is listed itself. Stops early when no addition helps, even below the shelf limit. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `opt_assortment_recapture_greedy_marginal([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## opt_assortment_recapture_local_search
+
+`opt_assortment_recapture_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Recapture greedy, then swaps a listed product for an unlisted one while that raises recaptured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `opt_assortment_recapture_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## opt_assortment_recapture_top_margin
+
+`opt_assortment_recapture_top_margin(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
+
+Lists the top products by standalone margin*base_demand, IGNORING where delisted demand would go. The obvious rule, and a poor one here: it never lists a small-demand product that would soak up a lot of orphaned demand at a high margin. Included so a search has something to beat. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
+
+Example: `opt_assortment_recapture_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
 ## opt_assortment_top_margin
 
 `opt_assortment_top_margin(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
 
-Lists the top products by standalone margin*demand, IGNORING cannibalisation. The obvious rule, and the one that overstates its own result whenever listed products substitute for each other — included so a search has something to beat. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i when BOTH are listed — and a shelf limit. Returns a boolean per product and the total captured margin, where each listed product earns margin * (base_demand minus demand lost to the other listed products).
+Lists the top products by standalone margin*demand, IGNORING cannibalisation. The obvious rule, and the one that overstates its own result whenever listed products substitute for each other — included so a search has something to beat. MODEL: CANNIBALISATION — each listed product earns margin * (base_demand minus the demand the OTHER LISTED products take from it). Listing near-duplicates destroys value here. If instead you are DELISTING and want the demand of dropped products to flow to the survivors, use the anofox_optimize_assortment_recapture_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `opt_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
