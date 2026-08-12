@@ -111,3 +111,64 @@ query I
 SELECT opt_pack_first_fit_decreasing([]::DOUBLE[], 10.0).bins_used;
 ----
 0
+
+# FEASIBILITY ACROSS THE WHOLE FAMILY (codex review finding, Medium).
+# Previously only one algorithm's assignment length and one algorithm's
+# capacity were checked. For functions an LLM search optimises against,
+# a member that quietly returns an infeasible packing would simply win —
+# so every member must satisfy every invariant on an adversarial case.
+#
+# Invariants: exactly one assignment per item; every bin id < bins_used;
+# no bin over capacity.
+statement ok
+CREATE TABLE adversarial AS
+SELECT [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0,440.0,261.0,483.0,391.0,
+        458.0,318.0,315.0,403.0,456.0,309.0,254.0,307.0,437.0,266.0,289.0,275.0,268.0,291.0,
+        314.0,281.0] AS sizes, 1000.0 AS cap;
+
+statement ok
+CREATE TABLE results AS
+SELECT 'first_fit_decreasing' AS algo, opt_pack_first_fit_decreasing(sizes, cap) AS r, sizes, cap FROM adversarial
+UNION ALL SELECT 'best_fit_decreasing', opt_pack_best_fit_decreasing(sizes, cap), sizes, cap FROM adversarial
+UNION ALL SELECT 'worst_fit_decreasing', opt_pack_worst_fit_decreasing(sizes, cap), sizes, cap FROM adversarial
+UNION ALL SELECT 'next_fit', opt_pack_next_fit(sizes, cap), sizes, cap FROM adversarial
+UNION ALL SELECT 'local_search', opt_pack_local_search(sizes, cap), sizes, cap FROM adversarial
+UNION ALL SELECT 'bin_completion', opt_pack_bin_completion(sizes, cap), sizes, cap FROM adversarial
+UNION ALL SELECT 'best_of', opt_pack_best_of(sizes, cap), sizes, cap FROM adversarial;
+
+# Every algorithm assigns exactly one bin per item.
+query I
+SELECT count(*) FROM results WHERE len(r.assignment) <> len(sizes);
+----
+0
+
+# No assignment is NULL — this is what the child-validity fix protects.
+query I
+SELECT count(*) FROM results, generate_series(1, len(sizes)) g(i)
+WHERE r.assignment[i] IS NULL;
+----
+0
+
+# Every bin id is within range.
+query I
+SELECT count(*) FROM results, generate_series(1, len(sizes)) g(i)
+WHERE r.assignment[i] >= r.bins_used;
+----
+0
+
+# No bin exceeds capacity, for any algorithm.
+query I
+SELECT count(*) FROM (
+  SELECT algo, r.assignment[i] AS bin, sum(sizes[i]) AS load, any_value(cap) AS cap
+  FROM results, generate_series(1, len(sizes)) g(i)
+  GROUP BY algo, r.assignment[i]
+) WHERE load > cap;
+----
+0
+
+# And every algorithm uses at least the theoretical lower bound.
+query I
+SELECT count(*) FROM results
+WHERE r.bins_used < CEIL(list_sum(sizes) / cap);
+----
+0

@@ -221,8 +221,14 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 	return best;
 }
 
-//! Bin completion (Korf): fill each bin with the best SUBSET of the
-//! remaining items rather than taking them one at a time.
+//! Bounded bin completion: fill each bin by searching COMPANIONS for a
+//! seed item, rather than taking items one at a time.
+//!
+//! This is NOT Korf's bin completion and NOT exhaustive over arbitrary
+//! subsets: it seeds with the largest unplaced item, searches all PAIRS
+//! of companions exhaustively, and then tops up greedily with anything
+//! that still fits. Enough to recover exact three-per-bin fills, which
+//! is what defeats the greedy members; not enough to claim optimality.
 //!
 //! The greedy members all commit to a locally-good first item and then
 //! cannot recover; on triplet-style instances, where the optimum packs
@@ -459,6 +465,12 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 			    }
 			    assign_offset += packing.assignment.size();
 		    }
+		    // The child values were all written explicitly, but a REUSED
+		    // child vector can carry stale null validity from a previous
+		    // chunk — the assignment would then read back as NULLs even
+		    // though every slot holds a real bin id. Mark the written
+		    // range valid. (Codex review finding, High.)
+		    FlatVector::Validity(ListVector::GetEntry(assign_vec)).SetAllValid(assign_offset);
 		    ListVector::SetListSize(assign_vec, assign_offset);
 	    });
 
@@ -489,7 +501,8 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "Packs items into bins by first-fit-decreasing: sorts items largest first and "
 	    "puts each into the first bin it fits. Fast and near-optimal on typical "
 	    "instances, but provably up to 11/9 of optimal and weak on triplet-style "
-	    "instances. Returns bins_used and a 0-based bin index per input item.",
+	    "instances. Returns bins_used and a 0-based bin index per input item. An "
+	    "empty item list uses 0 bins; a non-empty list of zero-size items uses 1.",
 	    "pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_best_fit_decreasing", BestFitDecreasing,
@@ -512,21 +525,22 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "pack_next_fit([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_local_search", LocalSearch,
-	    "Packs items by first-fit-decreasing and then IMPROVES the result: repeatedly "
-	    "tries to empty the least-loaded bin by relocating its items, including via "
-	    "1-1 swaps that make room. Slower than the greedy members but the only one "
-	    "that can beat them on triplet-style instances, where every greedy heuristic "
-	    "stalls at the same answer. Same signature as the other packing functions.",
+	    "Packs items by first-fit-decreasing and then IMPROVES the result: tries to "
+	    "dissolve bins one at a time, from least-loaded upward, by relocating their "
+	    "items into other bins — including a swap that displaces a smaller item to a "
+	    "third bin to make room. Repeats until no bin can be emptied. Slower than the "
+	    "greedy members; on triplet-style instances it does not beat them (use "
+	    "bin_completion there). Same signature as the other packing functions.",
 	    "pack_local_search([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_bin_completion", BinCompletion3,
-	    "Packs items by BIN COMPLETION: fills each bin with the best-fitting SUBSET of "
-	    "the remaining items instead of taking them one at a time, seeding each bin "
-	    "with the largest unplaced item and extending by whichever addition gets the "
-	    "bin closest to full. The greedy members all commit to a locally-good choice "
-	    "and stall together on triplet-style instances, where the optimum needs an "
-	    "exact-fitting subset per bin; this recovers those. Same signature as the "
-	    "other packing functions.",
+	    "Packs items by BOUNDED BIN COMPLETION: seeds each bin with the largest "
+	    "unplaced item, searches all PAIRS of companions exhaustively for the "
+	    "combination that fills the bin fullest, then tops up greedily with anything "
+	    "that still fits. Not exhaustive over arbitrary subsets and not optimal, but "
+	    "it recovers the exact three-per-bin fills that make every greedy member "
+	    "stall together on triplet-style instances. Costs O(n^2) per bin. Same "
+	    "signature as the other packing functions.",
 	    "pack_bin_completion([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_best_of", BestOf,
