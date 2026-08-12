@@ -79,3 +79,35 @@ WITH s(sizes) AS (SELECT [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,
 SELECT max(total) <= 1000.0 FROM (SELECT bin, sum(sz) AS total FROM loads GROUP BY bin);
 ----
 true
+
+# A non-finite or negative size is not a packing problem. Both slipped
+# through silently and returned a confident WRONG answer: [-5.0, 3.0]
+# reported 1 bin, and ['nan', 3.0] reported 2, because every comparison
+# against NaN is false so it passed the capacity check and then fitted
+# nowhere. Silently-wrong is the worst failure mode for a function a
+# search optimises against.
+statement error
+SELECT opt_pack_first_fit_decreasing([-5.0, 3.0], 10.0);
+----
+must be >= 0
+
+statement error
+SELECT opt_pack_first_fit_decreasing(['nan'::DOUBLE, 3.0], 10.0);
+----
+must be finite
+
+statement error
+SELECT opt_pack_best_of([3.0, 'inf'::DOUBLE], 10.0);
+----
+must be finite
+
+statement error
+SELECT opt_pack_first_fit_decreasing([1.0], 'nan'::DOUBLE);
+----
+must be finite
+
+# An empty item list is a valid, degenerate problem: zero bins.
+query I
+SELECT opt_pack_first_fit_decreasing([]::DOUBLE[], 10.0).bins_used;
+----
+0

@@ -5,11 +5,13 @@
 #include "duckdb.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "packing.hpp"
+#include "version.hpp"
 
 namespace duckdb {
 
 static void LoadInternal(ExtensionLoader &loader) {
 	RegisterPackingFunctions(loader);
+	RegisterVersionFunction(loader);
 }
 
 void AnofoxOptimizeExtension::Load(ExtensionLoader &loader) {
@@ -21,7 +23,7 @@ std::string AnofoxOptimizeExtension::Name() {
 }
 
 std::string AnofoxOptimizeExtension::Version() const {
-	return "0.1.0";
+	return ANOFOX_OPTIMIZE_VERSION;
 }
 
 } // namespace duckdb

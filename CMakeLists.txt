@@ -8,6 +8,7 @@ include_directories(src/include)
 set(EXTENSION_SOURCES
     src/anofox_optimize_extension.cpp
     src/packing.cpp
+    src/version.cpp
 )
 
 build_static_extension(anofox_optimize ${EXTENSION_SOURCES})

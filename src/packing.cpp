@@ -7,6 +7,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <numeric>
 #include <vector>
 
@@ -391,11 +392,26 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 			    if (!list_data.validity.RowIsValid(lidx) ||
 			        !cap_data.validity.RowIsValid(cidx)) {
 				    FlatVector::SetNull(result, row, true);
+				    // Leave no garbage behind the NULL: an uninitialised
+				    // list_entry_t carries an arbitrary offset/length that a
+				    // consumer reaching past the validity mask would follow.
+				    assign_out[row].offset = assign_offset;
+				    assign_out[row].length = 0;
+				    bins_out[row] = 0;
 				    continue;
 			    }
 			    const double capacity = caps[cidx];
+			    if (!std::isfinite(capacity)) {
+				    throw InvalidInputException(
+				        "capacity must be finite, got %f — a non-finite capacity makes "
+				        "every fit test meaningless",
+				        capacity);
+			    }
 			    if (!(capacity > 0)) {
-				    throw InvalidInputException("capacity must be > 0, got %f", capacity);
+				    throw InvalidInputException(
+				        "capacity must be > 0, got %f — no item can be placed in a bin "
+				        "of non-positive capacity",
+				        capacity);
 			    }
 
 			    const auto entry = lists[lidx];
@@ -407,6 +423,23 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 					    throw InvalidInputException("sizes must not contain NULL");
 				    }
 				    const double size = child_values[ci];
+				    // Reject before packing. Both of these previously slipped
+				    // through and returned a confident WRONG answer: a negative
+				    // size reported 1 bin for [-5, 3], and NaN reported 2 for
+				    // [NaN, 3] because every comparison against NaN is false, so
+				    // it passed the capacity check and then fitted nowhere.
+				    if (!std::isfinite(size)) {
+					    throw InvalidInputException(
+					        "item %llu has size %f — sizes must be finite; a non-finite "
+					        "size silently defeats every capacity check",
+					        static_cast<uint64_t>(i), size);
+				    }
+				    if (size < 0) {
+					    throw InvalidInputException(
+					        "item %llu has size %f — sizes must be >= 0; a negative size "
+					        "would let items 'free up' space that does not exist",
+					        static_cast<uint64_t>(i), size);
+				    }
 				    if (size > capacity) {
 					    throw InvalidInputException(
 					        "item of size %f exceeds capacity %f — no packing exists", size,
@@ -437,43 +470,56 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 	loader.RegisterFunction(std::move(info));
 }
 
+//! Register a packing algorithm under BOTH the canonical
+//! `anofox_optimize_*` name and the short `opt_*` alias, matching
+//! anofox-statistics (`anofox_stats_aic` + `aic`). The canonical name
+//! keeps the catalog unambiguous when several anofox extensions are
+//! loaded together; the short one is what a policy actually types.
+static void AddPackingFamily(ExtensionLoader &loader, const string &short_name,
+                             Packing (*fn)(const vector<double> &, double),
+                             const string &description, const string &example) {
+	AddPackingFunction(loader, "anofox_optimize_" + short_name, fn, description,
+	                   "anofox_optimize_" + example);
+	AddPackingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+}
+
 void RegisterPackingFunctions(ExtensionLoader &loader) {
-	AddPackingFunction(
-	    loader, "opt_pack_first_fit_decreasing", FirstFitDecreasing,
+	AddPackingFamily(
+	    loader, "pack_first_fit_decreasing", FirstFitDecreasing,
 	    "Packs items into bins by first-fit-decreasing: sorts items largest first and "
 	    "puts each into the first bin it fits. Fast and near-optimal on typical "
 	    "instances, but provably up to 11/9 of optimal and weak on triplet-style "
 	    "instances. Returns bins_used and a 0-based bin index per input item.",
-	    "opt_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_best_fit_decreasing", BestFitDecreasing,
+	    "pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_best_fit_decreasing", BestFitDecreasing,
 	    "Packs items into bins by best-fit-decreasing: sorts items largest first and "
 	    "puts each into the FULLEST bin it still fits, leaving emptier bins for larger "
 	    "items later. Same signature as the other packing functions.",
-	    "opt_pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_worst_fit_decreasing", WorstFitDecreasing,
+	    "pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_worst_fit_decreasing", WorstFitDecreasing,
 	    "Packs items into bins by worst-fit-decreasing: puts each item into the "
 	    "EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than "
 	    "best-fit but produces balanced loads. Same signature as the other packing "
 	    "functions.",
-	    "opt_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_next_fit", NextFit,
+	    "pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_next_fit", NextFit,
 	    "Packs items into bins by next-fit, in the given order, only ever using the "
 	    "most recently opened bin. The weakest member of the family and the cheapest; "
 	    "included so a search has a poor-but-valid baseline to move away from.",
-	    "opt_pack_next_fit([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_local_search", LocalSearch,
+	    "pack_next_fit([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_local_search", LocalSearch,
 	    "Packs items by first-fit-decreasing and then IMPROVES the result: repeatedly "
 	    "tries to empty the least-loaded bin by relocating its items, including via "
 	    "1-1 swaps that make room. Slower than the greedy members but the only one "
 	    "that can beat them on triplet-style instances, where every greedy heuristic "
 	    "stalls at the same answer. Same signature as the other packing functions.",
-	    "opt_pack_local_search([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_bin_completion", BinCompletion3,
+	    "pack_local_search([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_bin_completion", BinCompletion3,
 	    "Packs items by BIN COMPLETION: fills each bin with the best-fitting SUBSET of "
 	    "the remaining items instead of taking them one at a time, seeding each bin "
 	    "with the largest unplaced item and extending by whichever addition gets the "
@@ -481,14 +527,14 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "and stall together on triplet-style instances, where the optimum needs an "
 	    "exact-fitting subset per bin; this recovers those. Same signature as the "
 	    "other packing functions.",
-	    "opt_pack_bin_completion([4.0, 8.0, 1.0], 10.0)");
-	AddPackingFunction(
-	    loader, "opt_pack_best_of", BestOf,
+	    "pack_bin_completion([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFamily(
+	    loader, "pack_best_of", BestOf,
 	    "Runs every packing algorithm in this family and returns whichever used the "
 	    "fewest bins. Costs the sum of the parts and never loses to any single "
 	    "member; use it when you do not want to choose. Same signature as the other "
 	    "packing functions.",
-	    "opt_pack_best_of([4.0, 8.0, 1.0], 10.0)");
+	    "pack_best_of([4.0, 8.0, 1.0], 10.0)");
 }
 
 } // namespace duckdb
