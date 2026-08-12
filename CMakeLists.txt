@@ -42,6 +42,7 @@ set(EXTENSION_SOURCES
     src/scheduling.cpp
     src/batching.cpp
     src/selection.cpp
+    src/matrix.cpp
     src/version.cpp
 )
 

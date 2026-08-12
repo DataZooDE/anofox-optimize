@@ -67,6 +67,14 @@ Example: `anofox_optimize_knapsack_greedy_ratio([10.0, 6.0], [5.0, 4.0], 6.0)`
 
 Example: `anofox_optimize_knapsack_greedy_value([10.0, 6.0], [5.0, 4.0], 6.0)`
 
+## anofox_optimize_matrix_from_triples
+
+`anofox_optimize_matrix_from_triples(['BIGINT[]', 'BIGINT[]', 'DOUBLE[]', BIGINT, BIGINT])` -> `DOUBLE[]`
+
+Builds the flattened ROW-MAJOR matrix the sequencing, scheduling, assortment and portfolio functions expect, from (from, to, value) TRIPLES — which is how the data is usually stored. Missing cells are 0; duplicate cells RAISE rather than silently keeping the last one. `index_base` is subtracted from the ids, so pass 1 for 1-based ids and 0 for 0-based. Use with list aggregation, e.g. `SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.
+
+Example: `anofox_optimize_matrix_from_triples([1,2], [2,1], [0.5, 0.5], 2, 1)`
+
 ## anofox_optimize_pack_best_fit_decreasing
 
 `anofox_optimize_pack_best_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
@@ -338,6 +346,14 @@ Example: `opt_knapsack_greedy_ratio([10.0, 6.0], [5.0, 4.0], 6.0)`
 0/1 knapsack by descending VALUE, ignoring weight: takes each item that still fits. The weakest member of the family — it loses to by-ratio whenever value and weight are correlated — and included so a search has a poor-but-valid option to move away from. Same signature as the other knapsack functions.
 
 Example: `opt_knapsack_greedy_value([10.0, 6.0], [5.0, 4.0], 6.0)`
+
+## opt_matrix_from_triples
+
+`opt_matrix_from_triples(['BIGINT[]', 'BIGINT[]', 'DOUBLE[]', BIGINT, BIGINT])` -> `DOUBLE[]`
+
+Builds the flattened ROW-MAJOR matrix the sequencing, scheduling, assortment and portfolio functions expect, from (from, to, value) TRIPLES — which is how the data is usually stored. Missing cells are 0; duplicate cells RAISE rather than silently keeping the last one. `index_base` is subtracted from the ids, so pass 1 for 1-based ids and 0 for 0-based. Use with list aggregation, e.g. `SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.
+
+Example: `opt_matrix_from_triples([1,2], [2,1], [0.5, 0.5], 2, 1)`
 
 ## opt_pack_best_fit_decreasing
 
