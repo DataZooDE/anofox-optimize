@@ -4,7 +4,9 @@
 
 #include "duckdb.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "batching.hpp"
 #include "knapsack.hpp"
+#include "selection.hpp"
 #include "packing.hpp"
 #include "scheduling.hpp"
 #include "sequencing.hpp"
@@ -66,6 +68,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterKnapsackFunctions(loader);
 	RegisterSequencingFunctions(loader);
 	RegisterSchedulingFunctions(loader);
+	RegisterBatchingFunctions(loader);
+	RegisterSelectionFunctions(loader);
 	RegisterVersionFunction(loader);
 
 	datazoo::RegisterBannerOption(loader);

@@ -1,0 +1,56 @@
+# name: test/sql/selection.test
+# description: assortment selection under cannibalisation (P5's objective)
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# Two near-identical products that cannibalise each other heavily, and a
+# shelf that fits both. Listing both looks better to a separable rule but
+# is worse once substitution is counted — the case a plain knapsack
+# cannot express.
+statement ok
+CREATE TABLE a AS SELECT [5.0, 4.9]::DOUBLE[] AS m,
+                         [100.0, 100.0]::DOUBLE[] AS d,
+                         [0.0, 0.95, 0.95, 0.0]::DOUBLE[] AS s, 2::BIGINT AS k;
+
+# The naive rule lists both and captures LESS than the marginal rule,
+# which stops early. If no member beats top-margin the family is
+# decorative.
+query I
+SELECT opt_assortment_greedy_marginal(m,d,s,k).captured_margin
+       > opt_assortment_top_margin(m,d,s,k).captured_margin FROM a;
+----
+true
+
+# The marginal rule declines to fill the shelf when filling it loses money.
+query I
+SELECT list_count(list_filter(opt_assortment_greedy_marginal(m,d,s,k).listed, x -> x)) FROM a;
+----
+1
+
+# Every member returns one boolean per product and never exceeds the shelf.
+query I
+SELECT count(*) FROM (
+  SELECT opt_assortment_top_margin(m,d,s,k) r, m, k FROM a
+  UNION ALL SELECT opt_assortment_greedy_marginal(m,d,s,k), m, k FROM a
+  UNION ALL SELECT opt_assortment_local_search(m,d,s,k), m, k FROM a
+  UNION ALL SELECT opt_assortment_best_of(m,d,s,k), m, k FROM a
+) WHERE len(r.listed) <> len(m)
+   OR list_count(list_filter(r.listed, x -> x)) > k;
+----
+0
+
+# Captured margin must never exceed the un-cannibalised total — a member
+# that double-counted shared demand would win an optimising search.
+query I
+SELECT count(*) FROM (
+  SELECT opt_assortment_best_of(m,d,s,k).captured_margin cm, m, d FROM a
+) WHERE cm > list_sum([m[1]*d[1], m[2]*d[2]]);
+----
+0
+
+# A substitution fraction outside [0,1] would create or destroy demand.
+statement error
+SELECT opt_assortment_top_margin([1.0]::DOUBLE[], [1.0]::DOUBLE[], [1.5]::DOUBLE[], 1);
+----
+must be in [0,1]

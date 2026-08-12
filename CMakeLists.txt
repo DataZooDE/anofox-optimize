@@ -40,6 +40,8 @@ set(EXTENSION_SOURCES
     src/knapsack.cpp
     src/sequencing.cpp
     src/scheduling.cpp
+    src/batching.cpp
+    src/selection.cpp
     src/version.cpp
 )
 

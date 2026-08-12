@@ -1,0 +1,75 @@
+# name: test/sql/batching.test
+# description: priority-weighted wave batching (P2's objective)
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# Two full-wave orders and one small urgent one. Size-first fills waves 1
+# and 2 exactly, stranding the urgent order in wave 3; priority-aware
+# batching puts it first. The instance matters: an earlier version used
+# [6,1,6] where the urgent order slipped into wave 1 under EVERY rule, so
+# all five members returned 1.0909 — no spread at all, the "family is
+# decorative" failure AGENTS.md warns about, and the test could not see it.
+statement ok
+CREATE TABLE b AS SELECT [7.0, 7.0, 1.0]::DOUBLE[] AS items,
+                         [1.0, 1.0, 9.0]::DOUBLE[] AS prio, 7.0 AS cap;
+
+# Every member assigns exactly one wave per order, all >= 1, and no wave
+# exceeds capacity. An algorithm that silently overfilled a wave would
+# simply win.
+query I
+WITH r AS (
+  SELECT 'as_given' algo, opt_wave_as_given(items,prio,cap) v, items, cap FROM b
+  UNION ALL SELECT 'priority_first', opt_wave_priority_first(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'priority_density', opt_wave_priority_density(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'fewest_waves', opt_wave_fewest_waves(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'best_of', opt_wave_best_of(items,prio,cap), items, cap FROM b
+)
+SELECT count(*) FROM r WHERE len(v.wave) <> len(items) OR list_min(v.wave) < 1;
+----
+0
+
+# No wave exceeds capacity, for any algorithm. An algorithm that silently
+# overfilled a wave would simply win an optimising search.
+query I
+WITH r AS (
+  SELECT 'as_given' algo, opt_wave_as_given(items,prio,cap) v, items, cap FROM b
+  UNION ALL SELECT 'priority_first', opt_wave_priority_first(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'priority_density', opt_wave_priority_density(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'fewest_waves', opt_wave_fewest_waves(items,prio,cap), items, cap FROM b
+  UNION ALL SELECT 'best_of', opt_wave_best_of(items,prio,cap), items, cap FROM b
+),
+loads AS (
+  SELECT algo, v.wave[i] AS w, sum(items[i]) AS load, any_value(cap) AS cap
+  FROM r, generate_series(1, len(items)) g(i)
+  GROUP BY algo, v.wave[i]
+)
+SELECT count(*) FROM loads WHERE load > cap;
+----
+0
+
+# Real SPREAD: optimising wave COUNT is the wrong objective here and pays
+# for it against priority-aware batching.
+query I
+SELECT opt_wave_fewest_waves(items,prio,cap).avg_weighted_wave
+       > opt_wave_priority_density(items,prio,cap).avg_weighted_wave FROM b;
+----
+true
+
+query I
+SELECT opt_wave_best_of(items,prio,cap).avg_weighted_wave
+       <= LEAST(opt_wave_as_given(items,prio,cap).avg_weighted_wave,
+                opt_wave_fewest_waves(items,prio,cap).avg_weighted_wave) FROM b;
+----
+true
+
+# An order that cannot fit any wave is a caller error, named precisely.
+statement error
+SELECT opt_wave_priority_first([9.0]::DOUBLE[], [1.0]::DOUBLE[], 7.0);
+----
+cannot be batched
+
+statement error
+SELECT opt_wave_priority_first([1.0,2.0]::DOUBLE[], [1.0]::DOUBLE[], 7.0);
+----
+were required
