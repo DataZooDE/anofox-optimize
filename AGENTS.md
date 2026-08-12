@@ -34,6 +34,24 @@ option to move away from — hence `opt_pack_next_fit`.
   capacity, never below the theoretical lower bound.
 - **Never accept nonsense silently.** Negative and non-finite sizes each
   produced confident wrong answers before they were rejected.
+- **A family must name its objective when another family shares its
+  signature.** `assortment_*` and `assortment_recapture_*` take identical
+  arguments and return an identical struct, but score a shelf under
+  opposite economics — cannibalisation among the listed, versus recapture
+  from the delisted. Nothing in the data says which one a caller means.
+  This is not hypothetical: a live search called the wrong one in 6 of 6
+  runs and converged BELOW a trivial top-(margin*demand) ranking, 63% short
+  of the optimum, because optimising one objective while being scored on
+  the other is worse than not optimising at all. Every such description now
+  opens with `MODEL:` and names the sibling family as the alternative. A
+  shared boilerplate sentence would have hidden exactly this.
+- **A fixture that cannot separate the members proves nothing.** Three
+  pilots looked like "the search adds nothing" until their instances were
+  checked: 43 distinct policies were scoring one identical value. Build the
+  instance so the obvious heuristic is measurably far from optimal, compute
+  the optimum independently (brute force, DP, enumeration), and assert on
+  the gap — a test that only checks "runs without error" passes on a
+  degenerate instance.
 - **Descriptions must not overclaim.** `duckdb_functions()` is the single
   source of truth that anofox-evolve derives its prompt vocabulary from,
   so a description that overstates the algorithm poisons the search. Say
