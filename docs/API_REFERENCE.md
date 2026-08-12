@@ -91,6 +91,46 @@ Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST 
 
 Example: `anofox_optimize_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
+## anofox_optimize_schedule_atcs
+
+`anofox_optimize_schedule_atcs(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by APPARENT TARDINESS COST WITH SETUPS: at each step picks the job maximising priority/processing, discounted by its slack and by the setup needed to switch to it. Unlike EDD and WSPT it weighs due dates, priorities AND setups together, which is what this objective actually trades off. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `anofox_optimize_schedule_atcs([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## anofox_optimize_schedule_best_of
+
+`anofox_optimize_schedule_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Runs every scheduling algorithm in this family and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any single member. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `anofox_optimize_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## anofox_optimize_schedule_edd
+
+`anofox_optimize_schedule_edd(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by EARLIEST DUE DATE. The textbook rule and optimal for maximum lateness without setups, but it ignores priorities and setup costs entirely, so it can be poor on weighted tardiness. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `anofox_optimize_schedule_edd([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## anofox_optimize_schedule_local_search
+
+`anofox_optimize_schedule_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `anofox_optimize_schedule_local_search([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## anofox_optimize_schedule_wspt
+
+`anofox_optimize_schedule_wspt(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by WEIGHTED SHORTEST PROCESSING TIME (priority/processing, descending). Strong when nearly everything will be late, weak when only a few jobs are, because it ignores due dates and setups. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `anofox_optimize_schedule_wspt([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
 ## anofox_optimize_sequence_as_given
 
 `anofox_optimize_sequence_as_given(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
@@ -218,6 +258,46 @@ Example: `opt_pack_next_fit([4.0, 8.0, 1.0], 10.0)`
 Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than best-fit but produces balanced loads. Same signature as the other packing functions.
 
 Example: `opt_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
+
+## opt_schedule_atcs
+
+`opt_schedule_atcs(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by APPARENT TARDINESS COST WITH SETUPS: at each step picks the job maximising priority/processing, discounted by its slack and by the setup needed to switch to it. Unlike EDD and WSPT it weighs due dates, priorities AND setups together, which is what this objective actually trades off. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `opt_schedule_atcs([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## opt_schedule_best_of
+
+`opt_schedule_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Runs every scheduling algorithm in this family and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any single member. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `opt_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## opt_schedule_edd
+
+`opt_schedule_edd(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by EARLIEST DUE DATE. The textbook rule and optimal for maximum lateness without setups, but it ignores priorities and setup costs entirely, so it can be poor on weighted tardiness. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `opt_schedule_edd([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## opt_schedule_local_search
+
+`opt_schedule_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `opt_schedule_local_search([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## opt_schedule_wspt
+
+`opt_schedule_wspt(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+
+Sequences jobs by WEIGHTED SHORTEST PROCESSING TIME (priority/processing, descending). Strong when nearly everything will be late, weak when only a few jobs are, because it ignores due dates and setups. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+
+Example: `opt_schedule_wspt([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
 ## opt_sequence_as_given
 

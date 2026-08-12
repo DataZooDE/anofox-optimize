@@ -39,6 +39,7 @@ set(EXTENSION_SOURCES
     src/packing.cpp
     src/knapsack.cpp
     src/sequencing.cpp
+    src/scheduling.cpp
     src/version.cpp
 )
 

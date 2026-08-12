@@ -6,6 +6,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "knapsack.hpp"
 #include "packing.hpp"
+#include "scheduling.hpp"
 #include "sequencing.hpp"
 #include "anofox_optimize_banner.hpp"
 
@@ -64,6 +65,7 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterPackingFunctions(loader);
 	RegisterKnapsackFunctions(loader);
 	RegisterSequencingFunctions(loader);
+	RegisterSchedulingFunctions(loader);
 	RegisterVersionFunction(loader);
 
 	datazoo::RegisterBannerOption(loader);

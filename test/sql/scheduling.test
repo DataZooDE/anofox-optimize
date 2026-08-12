@@ -1,0 +1,67 @@
+# name: test/sql/scheduling.test
+# description: weighted-tardiness sequencing with setups (P6's objective)
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# 4 jobs where EDD is wrong: job 3 is due soonest but carries priority 1,
+# while job 0 is due later and carries priority 10. A family whose members
+# all agree is decorative, so the spread here is the point.
+statement ok
+CREATE TABLE s AS SELECT
+  [10.0, 10.0, 10.0, 10.0]::DOUBLE[] AS p,
+  [45.0, 40.0, 35.0, 12.0]::DOUBLE[] AS d,
+  [10.0, 1.0, 1.0, 1.0]::DOUBLE[] AS w,
+  [2.0,2.0,2.0,2.0,2.0,  2.0,0.0,2.0,2.0,2.0,  2.0,2.0,0.0,2.0,2.0,
+   2.0,2.0,2.0,0.0,2.0,  2.0,2.0,2.0,2.0,0.0]::DOUBLE[] AS m,
+  4::BIGINT AS n;
+
+# Every member returns a valid PERMUTATION.
+query I
+SELECT count(*) FROM (
+  SELECT opt_schedule_edd(p,d,w,m,n) r, n FROM s
+  UNION ALL SELECT opt_schedule_wspt(p,d,w,m,n), n FROM s
+  UNION ALL SELECT opt_schedule_atcs(p,d,w,m,n), n FROM s
+  UNION ALL SELECT opt_schedule_local_search(p,d,w,m,n), n FROM s
+  UNION ALL SELECT opt_schedule_best_of(p,d,w,m,n), n FROM s
+) WHERE len(r.order) <> n OR len(list_distinct(r.order)) <> n;
+----
+0
+
+# The family must have real SPREAD: EDD ignores priority and pays for it.
+query I
+SELECT opt_schedule_edd(p,d,w,m,n).total_weighted_tardiness
+       > opt_schedule_best_of(p,d,w,m,n).total_weighted_tardiness FROM s;
+----
+true
+
+# best_of never loses to a member it contains.
+query I
+SELECT opt_schedule_best_of(p,d,w,m,n).total_weighted_tardiness
+       <= LEAST(opt_schedule_edd(p,d,w,m,n).total_weighted_tardiness,
+                opt_schedule_wspt(p,d,w,m,n).total_weighted_tardiness,
+                opt_schedule_atcs(p,d,w,m,n).total_weighted_tardiness) FROM s;
+----
+true
+
+# Tardiness is never negative: early jobs must not earn credit that
+# offsets a late one. A search would exploit that immediately.
+query I
+SELECT count(*) FROM (
+  SELECT opt_schedule_best_of(p,d,w,m,n) r FROM s
+) WHERE r.total_weighted_tardiness < 0;
+----
+0
+
+# The setup matrix is (n+1)^2, not n^2 — row 0 is the virtual start.
+statement error
+SELECT opt_schedule_edd([1.0,1.0]::DOUBLE[], [1.0,1.0]::DOUBLE[], [1.0,1.0]::DOUBLE[],
+                        [0.0,0.0,0.0,0.0]::DOUBLE[], 2);
+----
+were required
+
+statement error
+SELECT opt_schedule_edd([-1.0]::DOUBLE[], [1.0]::DOUBLE[], [1.0]::DOUBLE[],
+                        [0.0,0.0,0.0,0.0]::DOUBLE[], 1);
+----
+must be >= 0
