@@ -63,6 +63,20 @@ static void RegisterTelemetryOptions(ExtensionLoader &loader) {
 static void LoadInternal(ExtensionLoader &loader) {
 #ifdef ANOFOX_TELEMETRY_ENABLED
 	RegisterTelemetryOptions(loader);
+
+	// Identify the PRODUCT, not just the function. Without this every
+	// event carried an empty product envelope: RecordFunctionCall showed
+	// the function name with no product / product_version /
+	// product_edition, so the calls could not be attributed to this
+	// extension at all. `SetProduct` falls back to the name from
+	// `CaptureExtensionLoad` only if that was called — and neither was.
+	// Same sequence as anofox-statistics/bayes/forecast.
+	auto &telemetry = PostHogTelemetry::Instance();
+	telemetry.SetAPIKey("phc_t3wwRLtpyEmLHYaZCSszG0MqVr74J6wnCrj9D41zk2t");
+	const std::string version = AnofoxOptimizeVersion();
+	telemetry.SetProduct("anofox_optimize", version, "oss");
+	telemetry.AssociateGroup("deployment", PostHogTelemetry::GetDistinctId());
+	telemetry.CaptureExtensionLoad("anofox_optimize", version);
 #endif
 	RegisterPackingFunctions(loader);
 	RegisterKnapsackFunctions(loader);
