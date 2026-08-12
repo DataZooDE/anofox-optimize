@@ -1,0 +1,82 @@
+# name: test/sql/sequencing.test
+# description: sequencing with sequence-dependent setup costs
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# 4 jobs where the GIVEN order is deliberately expensive (0->1->2->3 costs
+# 27) while a permutation is cheap (0->2->1->3 costs 3). The first version
+# of this test used a matrix on which all three members returned 3.0 --
+# no spread at all, which is exactly the "family is decorative" failure
+# AGENTS.md warns about, and the test could not have detected it.
+statement ok
+CREATE TABLE m AS SELECT [
+  0.0, 9.0, 1.0, 9.0,
+  9.0, 0.0, 9.0, 1.0,
+  9.0, 1.0, 0.0, 9.0,
+  9.0, 9.0, 9.0, 0.0]::DOUBLE[] AS setup, 4::BIGINT AS n;
+
+# The family must have real SPREAD on this instance: the baseline is bad
+# and the greedy member is much better. (2-opt ties nearest-neighbour
+# here rather than beating it -- stated plainly rather than dressed up.)
+query I
+SELECT opt_sequence_as_given(setup, n).total_setup
+       > opt_sequence_nearest_neighbour(setup, n).total_setup FROM m;
+----
+true
+
+# Every member returns a valid PERMUTATION: n jobs, each exactly once.
+query I
+SELECT count(*) FROM (
+  SELECT 'as_given' a, opt_sequence_as_given(setup, n) r, n FROM m
+  UNION ALL SELECT 'nn', opt_sequence_nearest_neighbour(setup, n), n FROM m
+  UNION ALL SELECT '2opt', opt_sequence_two_opt(setup, n), n FROM m
+  UNION ALL SELECT 'best_of', opt_sequence_best_of(setup, n), n FROM m
+) WHERE len(r.order) <> n OR len(list_distinct(r.order)) <> n;
+----
+0
+
+# The reported total_setup must match the order actually returned — a
+# member that reports a cost it did not achieve would simply win.
+query I
+SELECT count(*) FROM (
+  SELECT r.order AS o, r.total_setup AS claimed, setup, n FROM (
+    SELECT opt_sequence_two_opt(setup, n) AS r, setup, n FROM m
+  )
+) t, LATERAL (
+  SELECT sum(setup[CAST(o[i] * n + o[i+1] + 1 AS BIGINT)]) AS actual
+  FROM generate_series(1, n-1) g(i)
+) s
+WHERE abs(claimed - actual) > 1e-9;
+----
+0
+
+# best_of never loses to a member it contains.
+query I
+SELECT opt_sequence_best_of(setup, n).total_setup
+       <= LEAST(opt_sequence_as_given(setup, n).total_setup,
+                opt_sequence_nearest_neighbour(setup, n).total_setup) FROM m;
+----
+true
+
+# A wrong-sized matrix is a caller error, named precisely.
+statement error
+SELECT opt_sequence_two_opt([0.0, 1.0, 2.0], 3);
+----
+exactly 9
+
+statement error
+SELECT opt_sequence_two_opt([0.0, 'nan'::DOUBLE, 1.0, 0.0], 2);
+----
+must be finite
+
+# Degenerate sizes are valid, not errors.
+query I
+SELECT opt_sequence_two_opt([]::DOUBLE[], 0).total_setup;
+----
+0
+
+query I
+SELECT opt_sequence_two_opt([0.0], 1).total_setup;
+----
+0

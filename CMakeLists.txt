@@ -37,6 +37,8 @@ endif()
 set(EXTENSION_SOURCES
     src/anofox_optimize_extension.cpp
     src/packing.cpp
+    src/knapsack.cpp
+    src/sequencing.cpp
     src/version.cpp
 )
 

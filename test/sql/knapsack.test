@@ -1,0 +1,66 @@
+# name: test/sql/knapsack.test
+# description: 0/1 knapsack decision algorithms
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# The classic case where by-ratio LOSES: item 0 has the best ratio but
+# taking it blocks the pair that is worth more. If a family has no member
+# that beats the obvious heuristic, it is decorative.
+query I
+SELECT opt_knapsack_greedy_ratio([7.0, 4.0, 4.0], [5.0, 4.0, 4.0], 8.0).total_value;
+----
+7
+
+query I
+SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5.0, 4.0, 4.0], 8.0).total_value;
+----
+8
+
+# Every member must return a FEASIBLE selection: total weight within
+# capacity, one boolean per item.
+query I
+SELECT count(*) FROM (
+  SELECT opt_knapsack_greedy_ratio([7.0,4.0,4.0],[5.0,4.0,4.0],8.0) AS r
+  UNION ALL SELECT opt_knapsack_greedy_value([7.0,4.0,4.0],[5.0,4.0,4.0],8.0)
+  UNION ALL SELECT opt_knapsack_exact([7.0,4.0,4.0],[5.0,4.0,4.0],8.0)
+  UNION ALL SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0)
+) WHERE r.total_weight > 8.0 OR len(r.selected) <> 3;
+----
+0
+
+# best_of never loses to a member it contains.
+query I
+SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value
+       >= opt_knapsack_greedy_value([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value;
+----
+true
+
+# The exact member REFUSES an instance it cannot solve exactly rather
+# than silently returning a heuristic answer that is no longer a bound.
+statement error
+SELECT opt_knapsack_exact([1.0], [1.0], 1e9);
+----
+over the
+
+# Mismatched inputs, NULLs and nonsense are rejected with a reason.
+statement error
+SELECT opt_knapsack_greedy_ratio([1.0, 2.0], [1.0], 5.0);
+----
+same length
+
+statement error
+SELECT opt_knapsack_greedy_ratio([1.0], [-1.0], 5.0);
+----
+weights must be >= 0
+
+statement error
+SELECT opt_knapsack_greedy_ratio([1.0], ['nan'::DOUBLE], 5.0);
+----
+must be finite
+
+# Zero capacity selects nothing, and that is a valid answer.
+query I
+SELECT opt_knapsack_exact([5.0, 3.0], [2.0, 1.0], 0.0).total_value;
+----
+0

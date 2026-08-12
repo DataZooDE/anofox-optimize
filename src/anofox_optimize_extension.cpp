@@ -4,7 +4,9 @@
 
 #include "duckdb.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
+#include "knapsack.hpp"
 #include "packing.hpp"
+#include "sequencing.hpp"
 #include "anofox_optimize_banner.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
@@ -60,6 +62,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterTelemetryOptions(loader);
 #endif
 	RegisterPackingFunctions(loader);
+	RegisterKnapsackFunctions(loader);
+	RegisterSequencingFunctions(loader);
 	RegisterVersionFunction(loader);
 
 	datazoo::RegisterBannerOption(loader);
