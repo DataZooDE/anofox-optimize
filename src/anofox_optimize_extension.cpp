@@ -1,5 +1,7 @@
 #define DUCKDB_EXTENSION_MAIN
 
+#include "anofox_optimize_extension.hpp"
+
 #include "duckdb.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "packing.hpp"
@@ -10,15 +12,17 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterPackingFunctions(loader);
 }
 
-class AnofoxOptimizeExtension : public Extension {
-public:
-	std::string Name() override {
-		return "anofox_optimize";
-	}
-	std::string Version() const override {
-		return "0.1.0";
-	}
-};
+void AnofoxOptimizeExtension::Load(ExtensionLoader &loader) {
+	LoadInternal(loader);
+}
+
+std::string AnofoxOptimizeExtension::Name() {
+	return "anofox_optimize";
+}
+
+std::string AnofoxOptimizeExtension::Version() const {
+	return "0.1.0";
+}
 
 } // namespace duckdb
 

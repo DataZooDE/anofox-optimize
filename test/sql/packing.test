@@ -37,3 +37,45 @@ statement error
 SELECT opt_pack_first_fit_decreasing([1.0], 0.0);
 ----
 capacity must be > 0
+
+# The improvement member must actually beat the greedy ones where they
+# stall. Falkenauer triplet instance: an exact 3-per-bin partition exists
+# (optimum 10 bins), and first-fit-decreasing provably does not find it.
+query I
+SELECT opt_pack_first_fit_decreasing(
+  [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0,440.0,261.0,483.0,391.0,458.0,
+   318.0,315.0,403.0,456.0,309.0,254.0,307.0,437.0,266.0,289.0,275.0,268.0,291.0,314.0,281.0],
+  1000.0).bins_used;
+----
+12
+
+# The family must have genuine SPREAD on this instance, or "swap the
+# algorithm" changes the name and not the result. Bin completion is the
+# member that breaks the greedy tie; relocation-only local search
+# legitimately does not, and that is fine as long as someone does.
+query I
+SELECT opt_pack_bin_completion(
+  [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0,440.0,261.0,483.0,391.0,458.0,
+   318.0,315.0,403.0,456.0,309.0,254.0,307.0,437.0,266.0,289.0,275.0,268.0,291.0,314.0,281.0],
+  1000.0).bins_used < 12;
+----
+true
+
+# best_of can never lose to any individual member.
+query I
+SELECT opt_pack_best_of([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0).bins_used
+       <= LEAST(opt_pack_first_fit_decreasing([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0).bins_used,
+                opt_pack_next_fit([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0).bins_used);
+----
+true
+
+# Every algorithm must return a FEASIBLE packing: no bin over capacity.
+# A search will exploit any function that quietly returns an invalid one.
+query I
+WITH s(sizes) AS (SELECT [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0]),
+     p AS (SELECT sizes, opt_pack_local_search(sizes, 1000.0) AS r FROM s),
+     loads AS (SELECT r.assignment[i] AS bin, sizes[i] AS sz
+               FROM p, generate_series(1, len(sizes)) g(i))
+SELECT max(total) <= 1000.0 FROM (SELECT bin, sum(sz) AS total FROM loads GROUP BY bin);
+----
+true

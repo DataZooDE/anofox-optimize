@@ -3,6 +3,7 @@
 #include "duckdb/common/exception.hpp"
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
+#include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 
 #include <algorithm>
@@ -106,6 +107,248 @@ Packing NextFit(const vector<double> &sizes, double capacity) {
 		               }
 		               return loads.size();
 	               });
+}
+
+//! Try to empty the least-loaded bin by relocating its items into others,
+//! including via a 1-1 swap that makes room. Repeats until no bin can be
+//! emptied. This is what lets the family beat first-fit-decreasing on
+//! triplet-style instances, where every greedy heuristic stalls at the
+//! same answer — without an improvement member, "swap the algorithm"
+//! changes the name and not the result.
+Packing LocalSearch(const vector<double> &sizes, double capacity) {
+	Packing best = FirstFitDecreasing(sizes, capacity);
+
+	for (bool improved = true; improved;) {
+		improved = false;
+		const idx_t bin_count = best.bins_used;
+		vector<vector<idx_t>> members(bin_count);
+		vector<double> loads(bin_count, 0.0);
+		for (idx_t i = 0; i < sizes.size(); i++) {
+			members[best.assignment[i]].push_back(i);
+			loads[best.assignment[i]] += sizes[i];
+		}
+
+		// Try to dissolve EVERY bin, emptiest first — not just the
+		// emptiest one. Stopping after a single failed target was enough
+		// to leave a triplet instance at first-fit-decreasing's answer:
+		// the emptiest bin is often the one holding the awkward item,
+		// while a different bin dissolves easily.
+		vector<idx_t> targets(bin_count);
+		std::iota(targets.begin(), targets.end(), 0);
+		std::stable_sort(targets.begin(), targets.end(),
+		                 [&](idx_t a, idx_t b) { return loads[a] < loads[b]; });
+
+		vector<idx_t> trial_assignment;
+		bool relocated_all = false;
+		idx_t target = 0;
+		for (auto candidate_target : targets) {
+			target = candidate_target;
+			trial_assignment = best.assignment;
+			auto trial_loads = loads;
+			relocated_all = true;
+			for (auto item : members[target]) {
+				bool placed = false;
+				for (idx_t b = 0; b < bin_count && !placed; b++) {
+					if (b == target) {
+						continue;
+					}
+					if (trial_loads[b] + sizes[item] <= capacity) {
+						trial_loads[b] += sizes[item];
+						trial_assignment[item] = b;
+						placed = true;
+					}
+				}
+				// No direct home: swap with a smaller item in bin b, but
+				// that displaced item must go to a THIRD bin — never back
+				// into the bin being dissolved. Putting it there left the
+				// target non-empty while the renumbering below removed it
+				// anyway, silently merging two bins and returning an
+				// OVER-CAPACITY packing (it reported 6 bins where 10 is
+				// the proven minimum). Caught by the feasibility test.
+				for (idx_t b = 0; b < bin_count && !placed; b++) {
+					if (b == target) {
+						continue;
+					}
+					for (idx_t other = 0; other < sizes.size() && !placed; other++) {
+						if (trial_assignment[other] != b || sizes[other] >= sizes[item]) {
+							continue;
+						}
+						if (trial_loads[b] - sizes[other] + sizes[item] > capacity) {
+							continue;
+						}
+						for (idx_t c = 0; c < bin_count; c++) {
+							if (c == target || c == b) {
+								continue;
+							}
+							if (trial_loads[c] + sizes[other] <= capacity) {
+								trial_loads[b] += sizes[item] - sizes[other];
+								trial_loads[c] += sizes[other];
+								trial_loads[target] -= sizes[item];
+								trial_assignment[item] = b;
+								trial_assignment[other] = c;
+								placed = true;
+								break;
+							}
+						}
+					}
+				}
+				if (!placed) {
+					relocated_all = false;
+					break;
+				}
+			}
+			if (relocated_all) {
+				break;
+			}
+		}
+
+		if (relocated_all) {
+			// The target bin is empty; renumber to close the gap.
+			vector<idx_t> remap(bin_count, 0);
+			idx_t next = 0;
+			for (idx_t b = 0; b < bin_count; b++) {
+				remap[b] = (b == target) ? 0 : next++;
+			}
+			for (auto &a : trial_assignment) {
+				a = remap[a];
+			}
+			best.assignment = trial_assignment;
+			best.bins_used = next;
+			improved = true;
+		}
+	}
+	return best;
+}
+
+//! Bin completion (Korf): fill each bin with the best SUBSET of the
+//! remaining items rather than taking them one at a time.
+//!
+//! The greedy members all commit to a locally-good first item and then
+//! cannot recover; on triplet-style instances, where the optimum packs
+//! an exact-fitting subset into every bin, they all stall at the same
+//! answer. Searching subsets up to `max_subset` finds those exact fills.
+//!
+//! `max_subset` bounds the search: subsets are examined over the largest
+//! remaining items, so cost is O(n^max_subset) per bin in the worst case.
+//! 3 recovers classic triplet instances; higher costs more and rarely
+//! helps.
+Packing BinCompletion(const vector<double> &sizes, double capacity, idx_t max_subset) {
+	const idx_t n = sizes.size();
+	Packing result;
+	result.assignment.assign(n, 0);
+	vector<bool> used(n, false);
+	auto order = OrderBySizeDesc(sizes);
+	idx_t placed_count = 0;
+	idx_t bin = 0;
+
+	while (placed_count < n) {
+		// Seed the bin with the largest unplaced item: it is the hardest
+		// to place later, so it should choose its companions.
+		idx_t seed = n;
+		for (auto i : order) {
+			if (!used[i]) {
+				seed = i;
+				break;
+			}
+		}
+		vector<idx_t> chosen {seed};
+		double best_total = sizes[seed];
+
+		// EXHAUSTIVE over companions, not greedy per step. Choosing the
+		// single best next item at each step still stalls on triplets:
+		// the addition that gets closest to full on its own can leave no
+		// feasible completion. Enumerating pairs finds the exact fill.
+		vector<idx_t> remaining;
+		for (auto i : order) {
+			if (!used[i] && i != seed) {
+				remaining.push_back(i);
+			}
+		}
+		if (max_subset >= 3) {
+			double best_pair_total = best_total;
+			idx_t best_a = n, best_b = n;
+			for (idx_t x = 0; x < remaining.size(); x++) {
+				const double with_x = sizes[seed] + sizes[remaining[x]];
+				if (with_x > capacity) {
+					continue;
+				}
+				if (with_x > best_pair_total) {
+					best_pair_total = with_x;
+					best_a = remaining[x];
+					best_b = n;
+				}
+				for (idx_t y = x + 1; y < remaining.size(); y++) {
+					const double total = with_x + sizes[remaining[y]];
+					if (total <= capacity && total > best_pair_total) {
+						best_pair_total = total;
+						best_a = remaining[x];
+						best_b = remaining[y];
+					}
+				}
+			}
+			if (best_a != n) {
+				chosen.push_back(best_a);
+			}
+			if (best_b != n) {
+				chosen.push_back(best_b);
+			}
+			best_total = best_pair_total;
+		} else if (max_subset == 2 && !remaining.empty()) {
+			idx_t best_one = n;
+			double best_one_total = best_total;
+			for (auto i : remaining) {
+				const double total = best_total + sizes[i];
+				if (total <= capacity && total > best_one_total) {
+					best_one_total = total;
+					best_one = i;
+				}
+			}
+			if (best_one != n) {
+				chosen.push_back(best_one);
+				best_total = best_one_total;
+			}
+		}
+
+		// Top up with anything else that still fits.
+		for (auto i : order) {
+			if (used[i] || std::find(chosen.begin(), chosen.end(), i) != chosen.end()) {
+				continue;
+			}
+			if (best_total + sizes[i] <= capacity) {
+				chosen.push_back(i);
+				best_total += sizes[i];
+			}
+		}
+
+		for (auto i : chosen) {
+			used[i] = true;
+			result.assignment[i] = bin;
+			placed_count++;
+		}
+		bin++;
+	}
+	result.bins_used = bin;
+	return result;
+}
+
+Packing BinCompletion3(const vector<double> &sizes, double capacity) {
+	return BinCompletion(sizes, capacity, 3);
+}
+
+//! Run every member of the family and keep whichever used fewest bins.
+//! Costs the sum of the parts and never loses to any single member.
+Packing BestOf(const vector<double> &sizes, double capacity) {
+	Packing best = LocalSearch(sizes, capacity);
+	for (auto candidate : {BinCompletion3(sizes, capacity),
+	                       FirstFitDecreasing(sizes, capacity),
+	                       BestFitDecreasing(sizes, capacity),
+	                       WorstFitDecreasing(sizes, capacity),
+	                       NextFit(sizes, capacity)}) {
+		if (candidate.bins_used < best.bins_used) {
+			best = candidate;
+		}
+	}
+	return best;
 }
 
 } // namespace
@@ -221,6 +464,31 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "most recently opened bin. The weakest member of the family and the cheapest; "
 	    "included so a search has a poor-but-valid baseline to move away from.",
 	    "opt_pack_next_fit([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFunction(
+	    loader, "opt_pack_local_search", LocalSearch,
+	    "Packs items by first-fit-decreasing and then IMPROVES the result: repeatedly "
+	    "tries to empty the least-loaded bin by relocating its items, including via "
+	    "1-1 swaps that make room. Slower than the greedy members but the only one "
+	    "that can beat them on triplet-style instances, where every greedy heuristic "
+	    "stalls at the same answer. Same signature as the other packing functions.",
+	    "opt_pack_local_search([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFunction(
+	    loader, "opt_pack_bin_completion", BinCompletion3,
+	    "Packs items by BIN COMPLETION: fills each bin with the best-fitting SUBSET of "
+	    "the remaining items instead of taking them one at a time, seeding each bin "
+	    "with the largest unplaced item and extending by whichever addition gets the "
+	    "bin closest to full. The greedy members all commit to a locally-good choice "
+	    "and stall together on triplet-style instances, where the optimum needs an "
+	    "exact-fitting subset per bin; this recovers those. Same signature as the "
+	    "other packing functions.",
+	    "opt_pack_bin_completion([4.0, 8.0, 1.0], 10.0)");
+	AddPackingFunction(
+	    loader, "opt_pack_best_of", BestOf,
+	    "Runs every packing algorithm in this family and returns whichever used the "
+	    "fewest bins. Costs the sum of the parts and never loses to any single "
+	    "member; use it when you do not want to choose. Same signature as the other "
+	    "packing functions.",
+	    "opt_pack_best_of([4.0, 8.0, 1.0], 10.0)");
 }
 
 } // namespace duckdb
