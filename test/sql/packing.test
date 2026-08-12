@@ -1,0 +1,39 @@
+# name: test/sql/packing.test
+# description: bin-packing decision algorithms
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# Three items of 4, 8, 1 into bins of 10: 8+1 and 4, or 4+1 and 8 -> 2 bins.
+query I
+SELECT opt_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0).bins_used;
+----
+2
+
+# Every family member must return a VALID packing: no bin over capacity,
+# and every item assigned exactly once.
+query I
+WITH p AS (SELECT opt_pack_best_fit_decreasing([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0) AS r)
+SELECT len(r.assignment) FROM p;
+----
+8
+
+# Next-fit is the weak member and must not beat the decreasing heuristics
+# on an instance built to punish it.
+query I
+SELECT opt_pack_next_fit([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0).bins_used
+       >= opt_pack_first_fit_decreasing([6.0,5.0,4.0,7.0,2.0,3.0,8.0,1.0], 10.0).bins_used;
+----
+true
+
+# An item larger than the bin has no packing at all — say so rather than
+# silently dropping it, which is the exploit shape a search will find.
+statement error
+SELECT opt_pack_first_fit_decreasing([11.0], 10.0);
+----
+exceeds capacity
+
+statement error
+SELECT opt_pack_first_fit_decreasing([1.0], 0.0);
+----
+capacity must be > 0
