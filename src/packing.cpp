@@ -4,6 +4,8 @@
 #include "duckdb/common/vector_operations/generic_executor.hpp"
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+
+#include "register_alias.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
@@ -368,7 +370,7 @@ Packing BestOf(const vector<double> &sizes, double capacity) {
 //! is identical across the family so the signatures match exactly.
 static void AddPackingFunction(ExtensionLoader &loader, const string &name,
                                Packing (*fn)(const vector<double> &, double),
-                               const string &description, const string &example) {
+                               const string &description, const string &example, const string &alias_of) {
 	auto return_type =
 	    LogicalType::STRUCT({{"bins_used", LogicalType::UBIGINT},
 	                         {"assignment", LogicalType::LIST(LogicalType::UBIGINT)}});
@@ -481,12 +483,7 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(assign_vec, assign_offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 //! Register a packing algorithm under BOTH the canonical
@@ -497,9 +494,9 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 static void AddPackingFamily(ExtensionLoader &loader, const string &short_name,
                              Packing (*fn)(const vector<double> &, double),
                              const string &description, const string &example) {
-	AddPackingFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                   "anofox_optimize_" + example);
-	AddPackingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddPackingFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddPackingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 void RegisterPackingFunctions(ExtensionLoader &loader) {

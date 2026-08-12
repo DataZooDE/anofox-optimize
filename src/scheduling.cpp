@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -193,7 +195,7 @@ vector<double> ReadList(Vector &v, idx_t count, idx_t row, const char *what, idx
 
 static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
                                   Schedule (*fn)(const Instance &), const string &description,
-                                  const string &example) {
+                                  const string &example, const string &alias_of) {
 	auto return_type =
 	    LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::UBIGINT)},
 	                         {"total_weighted_tardiness", LogicalType::DOUBLE},
@@ -267,20 +269,15 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(order_vec, offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddSchedulingFamily(ExtensionLoader &loader, const string &short_name,
                                 Schedule (*fn)(const Instance &), const string &description,
                                 const string &example) {
-	AddSchedulingFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                      "anofox_optimize_" + example);
-	AddSchedulingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddSchedulingFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddSchedulingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 void RegisterSchedulingFunctions(ExtensionLoader &loader) {

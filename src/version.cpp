@@ -4,6 +4,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "version.hpp"
 
+#include "register_alias.hpp"
+
 namespace duckdb {
 
 //! House convention (cf. `anofox_bayes_version`): every anofox extension
@@ -24,15 +26,18 @@ static void VersionFunction(DataChunk &, ExpressionState &, Vector &result) {
 }
 
 void RegisterVersionFunction(ExtensionLoader &loader) {
-	ScalarFunction version("anofox_optimize_version", {}, LogicalType::VARCHAR, VersionFunction);
-	FunctionDescription desc;
-	desc.description =
+	const string description =
 	    "Returns the version of the loaded anofox_optimize extension, as stamped by "
 	    "the build.";
-	desc.examples.push_back("anofox_optimize_version()");
-	CreateScalarFunctionInfo info(version);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	// Every other function in this extension is reachable by both its
+	// canonical name and a short `opt_` one; `version` was the single
+	// exception, which made "every function has a short form" untrue.
+	RegisterScalarOrAlias(
+	    loader, ScalarFunction("anofox_optimize_version", {}, LogicalType::VARCHAR, VersionFunction),
+	    description, "anofox_optimize_version()", "");
+	RegisterScalarOrAlias(loader,
+	                      ScalarFunction("opt_version", {}, LogicalType::VARCHAR, VersionFunction),
+	                      description, "", "anofox_optimize_version");
 }
 
 } // namespace duckdb

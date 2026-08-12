@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -110,7 +112,7 @@ Sequence BestOfSequence(const vector<double> &m, idx_t n) {
 
 static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
                                   Sequence (*fn)(const vector<double> &, idx_t),
-                                  const string &description, const string &example) {
+                                  const string &description, const string &example, const string &alias_of) {
 	auto return_type = LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::UBIGINT)},
 	                                        {"total_setup", LogicalType::DOUBLE}});
 
@@ -203,20 +205,15 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(order_vec, order_offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddSequencingFamily(ExtensionLoader &loader, const string &short_name,
                                 Sequence (*fn)(const vector<double> &, idx_t),
                                 const string &description, const string &example) {
-	AddSequencingFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                      "anofox_optimize_" + example);
-	AddSequencingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddSequencingFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddSequencingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 void RegisterSequencingFunctions(ExtensionLoader &loader) {

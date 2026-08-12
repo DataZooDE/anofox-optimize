@@ -1,0 +1,50 @@
+# name: test/sql/naming.test
+# description: naming contract — canonical/alias symmetry and no duplicated docs
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# Every canonical function has a short form, and every short form has a
+# canonical. `anofox_optimize_version` was the one exception until the
+# naming review caught it: 39 canonical, 38 aliases.
+query I
+WITH c AS (SELECT DISTINCT replace(function_name,'anofox_optimize_','') n
+           FROM duckdb_functions() WHERE function_name LIKE 'anofox_optimize_%'),
+     s AS (SELECT DISTINCT replace(function_name,'opt_','') n
+           FROM duckdb_functions() WHERE function_name LIKE 'opt_%')
+SELECT (SELECT count(*) FROM c WHERE n NOT IN (SELECT n FROM s))
+     + (SELECT count(*) FROM s WHERE n NOT IN (SELECT n FROM c));
+----
+0
+
+# Short forms are TRUE ALIASES and carry no description of their own.
+# They previously duplicated 19,350 characters of documentation, which
+# anofox-evolve charges to EVERY prompt because it builds its vocabulary
+# from duckdb_functions() without deduplicating. anofox-statistics uses
+# alias_of in 107 places and anofox-forecast in 38; this extension used it
+# in none.
+query I
+SELECT coalesce(sum(length(coalesce(description,''))), 0)
+FROM duckdb_functions() WHERE function_name LIKE 'opt_%';
+----
+0
+
+# The canonical entries must still be documented — an alias that saved
+# tokens by dropping BOTH copies would be worse than the duplication.
+query I
+SELECT count(*) = 0 FROM duckdb_functions()
+WHERE function_name LIKE 'anofox_optimize_%' AND coalesce(description,'') = '';
+----
+true
+
+# Both spellings resolve to the same implementation.
+query I
+SELECT opt_version() = anofox_optimize_version();
+----
+true
+
+# American spelling, matching the extension's own name and every sibling.
+query I
+SELECT count(*) FROM duckdb_functions() WHERE function_name LIKE '%optimis%';
+----
+0

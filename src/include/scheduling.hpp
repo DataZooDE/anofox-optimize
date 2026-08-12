@@ -10,7 +10,7 @@ namespace duckdb {
 // tardiness depends on due dates and priorities those functions never
 // see. Measured: with only the setup family available, 0 of 7 P6
 // candidates called it. The model was right to ignore a function that
-// optimises the wrong thing.
+// optimizes the wrong thing.
 //
 // Every member takes (processing, due, priority, setup, n) and returns
 // the same STRUCT.

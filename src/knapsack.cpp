@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -136,7 +138,7 @@ Selection BestOfKnapsack(const vector<double> &values, const vector<double> &wei
 static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
                                 Selection (*fn)(const vector<double> &, const vector<double> &,
                                                 double),
-                                bool exact, const string &description, const string &example) {
+                                bool exact, const string &description, const string &example, const string &alias_of) {
 	auto return_type = LogicalType::STRUCT({{"selected", LogicalType::LIST(LogicalType::BOOLEAN)},
 	                                        {"total_value", LogicalType::DOUBLE},
 	                                        {"total_weight", LogicalType::DOUBLE}});
@@ -284,21 +286,17 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(sel_vec, sel_offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddKnapsackFamily(ExtensionLoader &loader, const string &short_name,
                               Selection (*fn)(const vector<double> &, const vector<double> &,
                                               double),
                               bool exact, const string &description, const string &example) {
-	AddKnapsackFunction(loader, "anofox_optimize_" + short_name, fn, exact, description,
-	                    "anofox_optimize_" + example);
-	AddKnapsackFunction(loader, "opt_" + short_name, fn, exact, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddKnapsackFunction(loader, canonical, fn, exact, description, "anofox_optimize_" + example, "");
+	AddKnapsackFunction(loader, "opt_" + short_name, fn, exact, description, "opt_" + example,
+	                    canonical);
 }
 
 void RegisterKnapsackFunctions(ExtensionLoader &loader) {

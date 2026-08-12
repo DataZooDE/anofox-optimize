@@ -29,7 +29,7 @@ true
 query I
 WITH x AS (
   SELECT 'top_return' a, opt_portfolio_top_return(r,cov,k,cap) v, k, cap FROM p
-  UNION ALL SELECT 'top_opt', opt_portfolio_top_return_optimised(r,cov,k,cap), k, cap FROM p
+  UNION ALL SELECT 'top_opt', opt_portfolio_top_return_optimized(r,cov,k,cap), k, cap FROM p
   UNION ALL SELECT 'greedy', opt_portfolio_greedy_sharpe(r,cov,k,cap), k, cap FROM p
   UNION ALL SELECT 'best_of', opt_portfolio_best_of(r,cov,k,cap), k, cap FROM p
 )

@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -144,21 +146,18 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 	    "pass 1 for 1-based ids and 0 for 0-based. Use with list aggregation, e.g. "
 	    "`SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.";
 
-	for (const auto &name : {string("anofox_optimize_matrix_from_triples"),
-	                         string("opt_matrix_from_triples")}) {
-		ScalarFunction fn(name,
-		                  {LogicalType::LIST(LogicalType::BIGINT),
-		                   LogicalType::LIST(LogicalType::BIGINT),
-		                   LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT,
-		                   LogicalType::BIGINT},
-		                  LogicalType::LIST(LogicalType::DOUBLE), build);
-		FunctionDescription desc;
-		desc.description = description;
-		desc.examples.push_back(name + "([1,2], [2,1], [0.5, 0.5], 2, 1)");
-		CreateScalarFunctionInfo info(fn);
-		info.descriptions.push_back(std::move(desc));
-		loader.RegisterFunction(std::move(info));
-	}
+	const auto make = [&](const string &name) {
+		return ScalarFunction(name,
+		                      {LogicalType::LIST(LogicalType::BIGINT),
+		                       LogicalType::LIST(LogicalType::BIGINT),
+		                       LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT,
+		                       LogicalType::BIGINT},
+		                      LogicalType::LIST(LogicalType::DOUBLE), build);
+	};
+	const string canonical = "anofox_optimize_matrix_from_triples";
+	RegisterScalarOrAlias(loader, make(canonical), description,
+	                      canonical + "([1,2], [2,1], [0.5, 0.5], 2, 1)", "");
+	RegisterScalarOrAlias(loader, make("opt_matrix_from_triples"), description, "", canonical);
 }
 
 } // namespace duckdb

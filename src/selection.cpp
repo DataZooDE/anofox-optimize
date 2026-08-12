@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -373,7 +375,7 @@ Portfolio TopReturnEqualWeight(const vector<double> &ret, const vector<double> &
 	return ScorePortfolio(ret, cov, n, ProjectWeights(std::move(w), support, cap));
 }
 
-//! Top-K by return, then optimise the WEIGHTS on that support.
+//! Top-K by return, then optimize the WEIGHTS on that support.
 Portfolio TopReturnOptimised(const vector<double> &ret, const vector<double> &cov, idx_t n, idx_t k,
                              double cap) {
 	auto support = TopKByReturn(ret, n, k);
@@ -384,7 +386,7 @@ Portfolio TopReturnOptimised(const vector<double> &ret, const vector<double> &co
 }
 
 //! Grow the support greedily by whichever asset most improves Sharpe
-//! after re-optimising weights — so it can pick a lower-return asset
+//! after re-optimizing weights — so it can pick a lower-return asset
 //! that diversifies. This is the member that uses the covariance.
 Portfolio GreedySharpe(const vector<double> &ret, const vector<double> &cov, idx_t n, idx_t k,
                        double cap) {
@@ -485,7 +487,7 @@ Portfolio BestOfPortfolio(const vector<double> &ret, const vector<double> &cov, 
 static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
                                  Portfolio (*fn)(const vector<double> &, const vector<double> &,
                                                  idx_t, idx_t, double),
-                                 const string &description, const string &example) {
+                                 const string &description, const string &example, const string &alias_of) {
 	auto return_type = LogicalType::STRUCT({{"weights", LogicalType::LIST(LogicalType::DOUBLE)},
 	                                        {"expected_return", LogicalType::DOUBLE},
 	                                        {"volatility", LogicalType::DOUBLE},
@@ -563,27 +565,22 @@ static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(w_vec, offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddPortfolioFamily(ExtensionLoader &loader, const string &short_name,
                                Portfolio (*fn)(const vector<double> &, const vector<double> &,
                                                idx_t, idx_t, double),
                                const string &description, const string &example) {
-	AddPortfolioFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                     "anofox_optimize_" + example);
-	AddPortfolioFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddPortfolioFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddPortfolioFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
                                   Assortment (*fn)(const vector<double> &, const vector<double> &,
                                                    const vector<double> &, idx_t, idx_t),
-                                  const string &description, const string &example) {
+                                  const string &description, const string &example, const string &alias_of) {
 	auto return_type = LogicalType::STRUCT({{"listed", LogicalType::LIST(LogicalType::BOOLEAN)},
 	                                        {"captured_margin", LogicalType::DOUBLE}});
 	ScalarFunction function(
@@ -648,21 +645,16 @@ static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(listed_vec, offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddAssortmentFamily(ExtensionLoader &loader, const string &short_name,
                                 Assortment (*fn)(const vector<double> &, const vector<double> &,
                                                  const vector<double> &, idx_t, idx_t),
                                 const string &description, const string &example) {
-	AddAssortmentFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                      "anofox_optimize_" + example);
-	AddAssortmentFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddAssortmentFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddAssortmentFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 void RegisterSelectionFunctions(ExtensionLoader &loader) {
@@ -752,15 +744,15 @@ void RegisterSelectionFunctions(ExtensionLoader &loader) {
 	                   "happily buy assets that all move together. The naive rule, included "
 	                   "so a search has something to beat." + pshape,
 	                   "portfolio_top_return" + pex);
-	AddPortfolioFamily(loader, "portfolio_top_return_optimised", TopReturnOptimised,
+	AddPortfolioFamily(loader, "portfolio_top_return_optimized", TopReturnOptimised,
 	                   "Picks the highest-expected-return assets up to the holding limit, then "
 	                   "OPTIMISES THE WEIGHTS on that fixed set by projected gradient ascent "
 	                   "on Sharpe. Better than equal weighting, but still cannot choose a "
 	                   "lower-return asset that would diversify." + pshape,
-	                   "portfolio_top_return_optimised" + pex);
+	                   "portfolio_top_return_optimized" + pex);
 	AddPortfolioFamily(loader, "portfolio_greedy_sharpe", GreedySharpe,
 	                   "Grows the holding set one asset at a time, each time adding whichever "
-	                   "most improves Sharpe AFTER re-optimising the weights — so it can pick "
+	                   "most improves Sharpe AFTER re-optimizing the weights — so it can pick "
 	                   "a lower-return asset because it diversifies — then SWAPS held assets "
 	                   "for unheld ones while that improves Sharpe, which is what lets it "
 	                   "choose a different set when the holding limit leaves no room to grow. "

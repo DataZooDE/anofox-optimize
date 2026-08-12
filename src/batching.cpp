@@ -5,6 +5,8 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "register_alias.hpp"
+
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
 #endif
@@ -152,7 +154,7 @@ vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, 
 
 static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
                                 Waves (*fn)(const vector<double> &, const vector<double> &, double),
-                                const string &description, const string &example) {
+                                const string &description, const string &example, const string &alias_of) {
 	auto return_type = LogicalType::STRUCT({{"wave", LogicalType::LIST(LogicalType::UBIGINT)},
 	                                        {"avg_weighted_wave", LogicalType::DOUBLE}});
 	ScalarFunction function(
@@ -217,20 +219,15 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(wave_vec, offset);
 	    });
 
-	FunctionDescription desc;
-	desc.description = description;
-	desc.examples.push_back(example);
-	CreateScalarFunctionInfo info(function);
-	info.descriptions.push_back(std::move(desc));
-	loader.RegisterFunction(std::move(info));
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
 }
 
 static void AddBatchingFamily(ExtensionLoader &loader, const string &short_name,
                               Waves (*fn)(const vector<double> &, const vector<double> &, double),
                               const string &description, const string &example) {
-	AddBatchingFunction(loader, "anofox_optimize_" + short_name, fn, description,
-	                    "anofox_optimize_" + example);
-	AddBatchingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example);
+	const string canonical = "anofox_optimize_" + short_name;
+	AddBatchingFunction(loader, canonical, fn, description, "anofox_optimize_" + example, "");
+	AddBatchingFunction(loader, "opt_" + short_name, fn, description, "opt_" + example, canonical);
 }
 
 void RegisterBatchingFunctions(ExtensionLoader &loader) {
@@ -257,7 +254,7 @@ void RegisterBatchingFunctions(ExtensionLoader &loader) {
 	                  "wave_priority_density" + ex);
 	AddBatchingFamily(loader, "wave_fewest_waves", FewestWaves,
 	                  "Batches largest orders first, minimising the NUMBER of waves rather "
-	                  "than the weighted mean wave. Kept deliberately: it optimises the "
+	                  "than the weighted mean wave. Kept deliberately: it optimizes the "
 	                  "wrong quantity for this objective, and shows what that costs." + shape,
 	                  "wave_fewest_waves" + ex);
 	AddBatchingFamily(loader, "wave_best_of", BestOfWaves,
