@@ -6,6 +6,10 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 
+#ifdef ANOFOX_TELEMETRY_ENABLED
+#include "telemetry.hpp"
+#endif
+
 #include <algorithm>
 #include <cmath>
 #include <numeric>
@@ -371,7 +375,10 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 
 	ScalarFunction function(
 	    name, {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::DOUBLE}, return_type,
-	    [fn](DataChunk &args, ExpressionState &, Vector &result) {
+	    [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
+#ifdef ANOFOX_TELEMETRY_ENABLED
+		    PostHogTelemetry::Instance().RecordFunctionCall(name);
+#endif
 		    const idx_t count = args.size();
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 
