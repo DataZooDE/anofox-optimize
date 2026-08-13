@@ -37,7 +37,7 @@ SELECT count(*) FROM x
 WHERE abs(list_sum(v.weights) - 1.0) > 1e-6
    OR list_max(v.weights) > cap + 1e-9
    OR list_min(v.weights) < -1e-9
-   OR list_count(list_filter(v.weights, w -> w > 1e-9)) > k;
+   OR list_count(list_filter(v.weights, lambda w: w > 1e-9)) > k;
 ----
 0
 

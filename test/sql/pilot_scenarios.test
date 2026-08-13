@@ -189,7 +189,7 @@ true
 
 # Constraints hold: at most k holdings, no weight over the cap, weights sum to 1.
 query I
-SELECT len(list_filter(opt_portfolio_best_of(r,cov,k,cap).weights, w -> w > 1e-9)) <= 5 FROM p7;
+SELECT len(list_filter(opt_portfolio_best_of(r,cov,k,cap).weights, lambda w: w > 1e-9)) <= 5 FROM p7;
 ----
 true
 

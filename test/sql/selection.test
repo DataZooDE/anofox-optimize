@@ -24,7 +24,7 @@ true
 
 # The marginal rule declines to fill the shelf when filling it loses money.
 query I
-SELECT list_count(list_filter(opt_assortment_greedy_marginal(m,d,s,k).listed, x -> x)) FROM a;
+SELECT list_count(list_filter(opt_assortment_greedy_marginal(m,d,s,k).listed, lambda x: x)) FROM a;
 ----
 1
 
@@ -36,7 +36,7 @@ SELECT count(*) FROM (
   UNION ALL SELECT opt_assortment_local_search(m,d,s,k), m, k FROM a
   UNION ALL SELECT opt_assortment_best_of(m,d,s,k), m, k FROM a
 ) WHERE len(r.listed) <> len(m)
-   OR list_count(list_filter(r.listed, x -> x)) > k;
+   OR list_count(list_filter(r.listed, lambda x: x)) > k;
 ----
 0
 
@@ -121,7 +121,7 @@ true
 
 # Never exceeds the shelf limit.
 query I
-SELECT list_count(list_filter(opt_assortment_recapture_best_of(m,d,s,k).listed, x -> x)) <= k FROM r;
+SELECT list_count(list_filter(opt_assortment_recapture_best_of(m,d,s,k).listed, lambda x: x)) <= k FROM r;
 ----
 true
 
