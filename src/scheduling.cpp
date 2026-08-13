@@ -13,6 +13,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <vector>
 
@@ -123,27 +124,170 @@ Schedule ApparentTardinessCost(const Instance &inst) {
 	return Evaluate(inst, std::move(order));
 }
 
-//! ATCS then adjacent-pair swaps while they help.
+//! ATCS, then a real neighbourhood: adjacent swaps, ARBITRARY-PAIR swaps
+//! and RELOCATION of a single job to any other position.
+//!
+//! Adjacent swaps alone were far too weak. On the P6 pilot instance
+//! (10 jobs, asymmetric setups) that version returned 168 against a
+//! Held-Karp optimum of 60 — worse than the plain SQL an LLM writes for
+//! the same problem, which is the opposite of what a vocabulary is for.
+//! Relocation is what actually matters under sequence-dependent setups:
+//! moving one job next to a cheap predecessor can save more than any
+//! number of neighbour exchanges.
 Schedule TardinessLocalSearch(const Instance &inst) {
 	Schedule best = ApparentTardinessCost(inst);
+	const idx_t n = best.order.size();
 	bool improved = true;
 	while (improved) {
 		improved = false;
-		for (idx_t i = 0; i + 1 < best.order.size(); i++) {
-			auto candidate = best.order;
-			std::swap(candidate[i], candidate[i + 1]);
-			auto trial = Evaluate(inst, std::move(candidate));
-			if (trial.total_weighted_tardiness < best.total_weighted_tardiness - 1e-12) {
-				best = std::move(trial);
-				improved = true;
+		// Swap any pair, not just neighbours.
+		for (idx_t i = 0; i < n && !improved; i++) {
+			for (idx_t j = i + 1; j < n; j++) {
+				auto candidate = best.order;
+				std::swap(candidate[i], candidate[j]);
+				auto trial = Evaluate(inst, std::move(candidate));
+				if (trial.total_weighted_tardiness < best.total_weighted_tardiness - 1e-12) {
+					best = std::move(trial);
+					improved = true;
+					break;
+				}
+			}
+		}
+		// Relocate one job to every other position.
+		for (idx_t i = 0; i < n && !improved; i++) {
+			for (idx_t j = 0; j < n; j++) {
+				if (i == j) {
+					continue;
+				}
+				auto candidate = best.order;
+				const auto job = candidate[i];
+				candidate.erase(candidate.begin() + static_cast<int64_t>(i));
+				candidate.insert(candidate.begin() + static_cast<int64_t>(j), job);
+				auto trial = Evaluate(inst, std::move(candidate));
+				if (trial.total_weighted_tardiness < best.total_weighted_tardiness - 1e-12) {
+					best = std::move(trial);
+					improved = true;
+					break;
+				}
 			}
 		}
 	}
 	return best;
 }
 
+//! The PROVEN optimum, by dynamic programming over (scheduled set, last
+//! job) keeping a PARETO FRONTIER of (elapsed time, cost) per state.
+//!
+//! The frontier is the whole point. A plain Held-Karp that stores only the
+//! cheapest way to reach (set, last) is WRONG here: with
+//! sequence-dependent setups the elapsed clock depends on the path taken,
+//! not just on which jobs are done, so a costlier-but-earlier prefix can
+//! beat a cheaper-but-later one on everything that follows. The first
+//! version of this function did exactly that and returned 91 on the P6
+//! pilot instance while the local search returned 60 — an "exact" solver
+//! losing to a heuristic, which is how the bug was caught.
+//!
+//! A pair (t1,c1) dominates (t2,c2) when t1 <= t2 and c1 <= c2: it is
+//! never later and never dearer, so nothing reachable from the second is
+//! better than from the first.
+static constexpr idx_t SCHEDULE_EXACT_MAX_JOBS = 14;
+
+Schedule ExactSchedule(const Instance &inst) {
+	const idx_t n = inst.n;
+	if (n > SCHEDULE_EXACT_MAX_JOBS) {
+		throw InvalidInputException(
+		    "anofox_optimize_schedule_exact is exponential and refuses more than %llu jobs "
+		    "(got %llu). Use anofox_optimize_schedule_local_search or "
+		    "anofox_optimize_schedule_best_of, which handle any size but are heuristic.",
+		    static_cast<unsigned long long>(SCHEDULE_EXACT_MAX_JOBS),
+		    static_cast<unsigned long long>(n));
+	}
+	if (n == 0) {
+		return Evaluate(inst, {});
+	}
+	struct Label {
+		double time;
+		double cost;
+		idx_t prev_last; // job index of the predecessor, n for "none"
+		idx_t prev_idx;  // index into the predecessor state's label list
+	};
+	const idx_t full = idx_t(1) << n;
+	vector<vector<vector<Label>>> lab(full, vector<vector<Label>>(n));
+
+	for (idx_t j = 0; j < n; j++) {
+		const double t = inst.SetupCost(0, j + 1) + inst.processing[j];
+		lab[idx_t(1) << j][j].push_back(
+		    Label {t, inst.priority[j] * std::max(0.0, t - inst.due[j]), n, 0});
+	}
+	// Insert a candidate, discarding it if dominated and evicting anything
+	// it dominates. Keeps each frontier small in practice.
+	auto offer = [](vector<Label> &frontier, const Label &cand) {
+		for (const auto &l : frontier) {
+			if (l.time <= cand.time + 1e-12 && l.cost <= cand.cost + 1e-12) {
+				return;
+			}
+		}
+		frontier.erase(std::remove_if(frontier.begin(), frontier.end(),
+		                              [&](const Label &l) {
+			                              return cand.time <= l.time + 1e-12 &&
+			                                     cand.cost <= l.cost + 1e-12;
+		                              }),
+		               frontier.end());
+		frontier.push_back(cand);
+	};
+
+	for (idx_t mask = 1; mask < full; mask++) {
+		for (idx_t last = 0; last < n; last++) {
+			if (!(mask >> last & 1) || lab[mask][last].empty()) {
+				continue;
+			}
+			for (idx_t li = 0; li < lab[mask][last].size(); li++) {
+				const Label base = lab[mask][last][li];
+				for (idx_t nxt = 0; nxt < n; nxt++) {
+					if (mask >> nxt & 1) {
+						continue;
+					}
+					const double t =
+					    base.time + inst.SetupCost(last + 1, nxt + 1) + inst.processing[nxt];
+					const double c =
+					    base.cost + inst.priority[nxt] * std::max(0.0, t - inst.due[nxt]);
+					offer(lab[mask | (idx_t(1) << nxt)][nxt], Label {t, c, last, li});
+				}
+			}
+		}
+	}
+
+	idx_t best_last = 0, best_idx = 0;
+	double best_cost = std::numeric_limits<double>::infinity();
+	for (idx_t j = 0; j < n; j++) {
+		for (idx_t i = 0; i < lab[full - 1][j].size(); i++) {
+			if (lab[full - 1][j][i].cost < best_cost) {
+				best_cost = lab[full - 1][j][i].cost;
+				best_last = j;
+				best_idx = i;
+			}
+		}
+	}
+	vector<idx_t> order;
+	idx_t mask = full - 1, cur = best_last, idx = best_idx;
+	while (cur != n) {
+		order.push_back(cur);
+		const Label &l = lab[mask][cur][idx];
+		const idx_t pl = l.prev_last, pi = l.prev_idx;
+		mask ^= (idx_t(1) << cur);
+		cur = pl;
+		idx = pi;
+	}
+	std::reverse(order.begin(), order.end());
+	return Evaluate(inst, std::move(order));
+}
+
 Schedule BestOfSchedule(const Instance &inst) {
 	auto best = TardinessLocalSearch(inst);
+	// Deliberately NOT calling ExactSchedule here: best_of must stay usable
+	// at any size, and silently going exponential past some hidden
+	// threshold is exactly the kind of surprise this library should not
+	// ship. A caller who wants the optimum asks for it by name.
 	for (auto candidate : {ApparentTardinessCost(inst), EarliestDueDate(inst),
 	                       WeightedShortestProcessing(inst)}) {
 		if (candidate.total_weighted_tardiness < best.total_weighted_tardiness) {
@@ -307,6 +451,14 @@ void RegisterSchedulingFunctions(ExtensionLoader &loader) {
 	                    "it weighs due dates, priorities AND setups together, which is what "
 	                    "this objective actually trades off." + shape,
 	                    "schedule_atcs" + ex);
+	AddSchedulingFamily(loader, "schedule_exact", ExactSchedule,
+	                    "The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled "
+	                    "set, last job). Weighted tardiness with sequence-dependent setups is "
+	                    "NP-hard, so this is exponential: it REFUSES more than 16 jobs with an "
+	                    "error naming the heuristic to use instead, rather than running for "
+	                    "hours. Use it to check how far a heuristic really is on a small "
+	                    "instance." + shape,
+	                    "schedule_exact" + ex);
 	AddSchedulingFamily(loader, "schedule_local_search", TardinessLocalSearch,
 	                    "Sequences by ATCS and then improves with adjacent-pair swaps while "
 	                    "they reduce weighted tardiness. Slower than the dispatch rules and "

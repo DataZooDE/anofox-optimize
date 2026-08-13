@@ -1,0 +1,205 @@
+# name: test/sql/pilot_scenarios.test
+# description: end-to-end scenarios from the real pilots, each asserted against an
+#              INDEPENDENTLY PROVEN optimum — never against this extension's own output
+# group: [anofox_optimize]
+#
+# Every expected value below was computed OUTSIDE this extension: by construction
+# (Falkenauer triplets), by exhaustive DP (subset-sum, scheduling), or by full
+# enumeration (assortment). A test that only checks self-consistency would pass
+# on a broken solver, which is the failure these are written to prevent.
+
+require anofox_optimize
+
+# ---------------------------------------------------------------- P0 --
+# Warehouse bin-packing, 60 cartons into 1000-unit bins.
+# Falkenauer TRIPLET instance: every bin holds exactly three items summing
+# to 1000, so the optimum is EXACTLY 20 bins by construction. Total load is
+# 20*1000 = 20000, so 19 bins is arithmetically impossible.
+# Measured on the real pilot: first-fit-decreasing needs 23.
+
+statement ok
+CREATE TABLE p0 AS SELECT [284.0, 427.0, 398.0, 297.0, 261.0, 258.0, 391.0, 302.0, 387.0, 295.0, 430.0, 325.0, 288.0, 225.0, 328.0, 282.0, 251.0, 304.0, 412.0, 348.0, 311.0, 262.0, 304.0, 300.0, 393.0, 305.0, 442.0, 444.0, 448.0, 294.0, 312.0, 418.0, 295.0, 286.0, 278.0, 408.0, 426.0, 298.0, 328.0, 336.0, 389.0, 293.0, 325.0, 409.0, 246.0, 261.0, 293.0, 295.0, 284.0, 419.0, 333.0, 261.0, 307.0, 393.0, 285.0, 437.0, 216.0, 455.0, 411.0, 307.0]::DOUBLE[] AS sizes, 1000.0 AS cap;
+
+# The naive rule is genuinely beaten -- if this ever ties, the fixture has
+# stopped discriminating and the numbers below mean nothing.
+query I
+SELECT opt_pack_first_fit_decreasing(sizes, cap).bins_used FROM p0;
+----
+23
+
+# best_of must not be WORSE than its weakest member.
+query I
+SELECT opt_pack_best_of(sizes, cap).bins_used
+       <= opt_pack_first_fit_decreasing(sizes, cap).bins_used FROM p0;
+----
+true
+
+# Feasibility is not optional: every item placed exactly once, no bin over
+# capacity. A solver that returns 19 bins by overfilling would otherwise win.
+query I
+SELECT len(opt_pack_best_of(sizes, cap).assignment) = 60 FROM p0;
+----
+true
+
+query I
+SELECT bool_and(load <= 1000.0) FROM (
+  SELECT sum(s) AS load FROM (
+    SELECT unnest(opt_pack_best_of(sizes, cap).assignment) AS b,
+           unnest(sizes) AS s FROM p0
+  ) GROUP BY b
+);
+----
+true
+
+# Never below the proven lower bound of 20 bins.
+query I
+SELECT opt_pack_best_of(sizes, cap).bins_used >= 20 FROM p0;
+----
+true
+
+# ---------------------------------------------------------------- P3 --
+# Carrier consolidation, 60 shipments, cheap carrier capacity 1000.
+# Cost = 2*W_A + 3*W_B = 3*3735 - W_A, so the decision is exactly subset-sum:
+# fill carrier A as full as possible. A PERFECT 1000 fill exists (proven by
+# bitset DP over the capacity); the best greedy reaches only 968.
+
+statement ok
+CREATE TABLE p3 AS SELECT [55.0, 89.0, 37.0, 37.0, 55.0, 75.0, 79.0, 58.0, 87.0, 63.0, 42.0, 84.0, 74.0, 55.0, 39.0, 80.0, 90.0, 76.0, 86.0, 70.0, 97.0, 49.0, 58.0, 34.0, 54.0, 42.0, 79.0, 65.0, 83.0, 47.0, 52.0, 74.0, 37.0, 39.0, 44.0, 84.0, 75.0, 45.0, 79.0, 85.0, 85.0, 42.0, 62.0, 83.0, 43.0, 45.0, 39.0, 87.0, 59.0, 94.0, 82.0, 33.0, 74.0, 57.0, 51.0, 38.0, 34.0, 40.0, 72.0, 62.0]::DOUBLE[] AS w, [55.0, 89.0, 37.0, 37.0, 55.0, 75.0, 79.0, 58.0, 87.0, 63.0, 42.0, 84.0, 74.0, 55.0, 39.0, 80.0, 90.0, 76.0, 86.0, 70.0, 97.0, 49.0, 58.0, 34.0, 54.0, 42.0, 79.0, 65.0, 83.0, 47.0, 52.0, 74.0, 37.0, 39.0, 44.0, 84.0, 75.0, 45.0, 79.0, 85.0, 85.0, 42.0, 62.0, 83.0, 43.0, 45.0, 39.0, 87.0, 59.0, 94.0, 82.0, 33.0, 74.0, 57.0, 51.0, 38.0, 34.0, 40.0, 72.0, 62.0]::DOUBLE[] AS v, 1000.0 AS cap;
+
+# The exact solver must find the perfect fill. This is the assertion that
+# justifies the family existing at all.
+query I
+SELECT round(opt_knapsack_exact(v, w, cap).total_value, 0) FROM p3;
+----
+1000
+
+# ... and must never exceed capacity.
+query I
+SELECT opt_knapsack_exact(v, w, cap).total_weight <= 1000.0 FROM p3;
+----
+true
+
+# Greedy is genuinely worse here -- 968, not 1000. This is what makes the
+# instance worth testing: on an easy instance greedy would tie and the test
+# would prove nothing.
+query I
+SELECT opt_knapsack_greedy_ratio(v, w, cap).total_value < 1000.0 FROM p3;
+----
+true
+
+query I
+SELECT opt_knapsack_best_of(v, w, cap).total_value
+       >= opt_knapsack_greedy_ratio(v, w, cap).total_value FROM p3;
+----
+true
+
+
+# ---------------------------------------------------------------- P6 --
+# Single-machine scheduling, 10 jobs, asymmetric sequence-dependent setups.
+# Held-Karp (computed independently, outside this extension) puts the optimum
+# at weighted tardiness 60. EDD — the textbook rule that ignores setups —
+# pays 617, more than TEN TIMES worse.
+#
+# This scenario caught two real defects. The local search used to return 168
+# because it only tried adjacent swaps; and the first `schedule_exact` returned
+# 91 because it kept one label per (set, last job), which is wrong when the
+# clock depends on the path taken.
+
+statement ok
+CREATE TABLE p6 AS SELECT
+  [4.0,6.0,5.0,6.0,4.0,6.0,5.0,3.0,3.0,3.0]::DOUBLE[] AS proc,
+  [26.0,41.0,38.0,22.0,12.0,61.0,28.0,18.0,45.0,24.0]::DOUBLE[] AS due,
+  [2.0,8.0,1.0,5.0,8.0,2.0,8.0,2.0,2.0,1.0]::DOUBLE[] AS prio,
+  [0.0,1.0,1.0,4.0,6.0,5.0,4.0,2.0,5.0,0.0,3.0,0.0,0.0,0.0,1.0,7.0,5.0,6.0,4.0,8.0,8.0,1.0,0.0,7.0,0.0,4.0,0.0,0.0,2.0,9.0,6.0,0.0,5.0,0.0,1.0,9.0,0.0,5.0,3.0,3.0,0.0,0.0,3.0,9.0,0.0,0.0,1.0,5.0,0.0,2.0,3.0,4.0,4.0,6.0,5.0,0.0,0.0,8.0,6.0,6.0,0.0,6.0,9.0,0.0,6.0,9.0,0.0,7.0,2.0,0.0,8.0,0.0,0.0,5.0,5.0,8.0,7.0,0.0,3.0,0.0,6.0,8.0,1.0,6.0,0.0,6.0,8.0,5.0,0.0,2.0,0.0,4.0,8.0,0.0,8.0,7.0,0.0,2.0,6.0,0.0,4.0,7.0,3.0,1.0,2.0,4.0,4.0,7.0,0.0,4.0,0.0,1.0,7.0,7.0,4.0,3.0,7.0,7.0,5.0,6.0,0.0]::DOUBLE[] AS setup, 10 AS n;
+
+# The exact solver must hit the independently proven optimum exactly.
+query I
+SELECT opt_schedule_exact(proc,due,prio,setup,n).total_weighted_tardiness FROM p6;
+----
+60
+
+# EDD is genuinely bad here, which is what makes the instance worth testing.
+query I
+SELECT opt_schedule_edd(proc,due,prio,setup,n).total_weighted_tardiness FROM p6;
+----
+617
+
+# The heuristic must be respectable, not merely better than EDD: within the
+# proven optimum, never below it.
+query I
+SELECT opt_schedule_local_search(proc,due,prio,setup,n).total_weighted_tardiness <= 60.0
+   AND opt_schedule_local_search(proc,due,prio,setup,n).total_weighted_tardiness >= 60.0 FROM p6;
+----
+true
+
+# No heuristic may ever beat the exact optimum — that would mean one of them
+# is scoring a sequence it did not actually produce.
+query I
+SELECT opt_schedule_best_of(proc,due,prio,setup,n).total_weighted_tardiness >= 60.0 FROM p6;
+----
+true
+
+# Every job scheduled exactly once.
+query I
+SELECT len(opt_schedule_exact(proc,due,prio,setup,n)."order") = 10 FROM p6;
+----
+true
+
+# The exact solver REFUSES oversized instances instead of hanging. 20 jobs is
+# past the documented 14-job limit. The setup matrix is correctly sized
+# ((20+1)^2 = 441) so this exercises the JOB-COUNT guard and not the shape
+# check — an undersized matrix raises a different error and would make this
+# test pass for the wrong reason.
+statement error
+SELECT opt_schedule_exact([1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]::DOUBLE[], [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]::DOUBLE[], [1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0,1.0]::DOUBLE[],
+                          [0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0]::DOUBLE[], 20);
+----
+refuses more than 14 jobs
+
+# ---------------------------------------------------------------- P7 --
+# Cardinality-constrained portfolio: 20 assets, hold at most 5, no position
+# above 35%. The three highest-return assets are a deliberately CORRELATED
+# cluster, so buying by return is the trap.
+#
+# Reference Sharpe 5.329278, from enumerating all C(20,5)=15504 subsets and
+# refining the best 400 under the position cap — computed outside this
+# extension.
+
+statement ok
+CREATE TABLE p7 AS SELECT [0.051,0.192,0.043,0.068,0.045,0.102,0.106,0.169,0.162,0.138,0.142,0.151,0.197,0.185,0.047,0.05,0.13,0.092,0.095,0.084]::DOUBLE[] AS r, [0.032761,-0.008749,0.002675,-0.009697,-0.001526,0.004254,-0.004137,0.0064,0.005338,-0.011039,0.003984,0.001803,-0.003755,0.006627,-0.007936,0.005723,-0.014274,-0.012035,-0.004154,-0.004929,-0.008749,0.145161,0.032578,0.028084,-0.01949,0.001031,-0.01295,0.060174,0.067302,0.071363,0.042728,0.069737,0.067869,0.112225,-0.01565,-0.001046,0.01756,0.000112,-0.007471,-0.024739,0.002675,0.032578,0.156816,-0.008705,-0.011887,-0.0116,-0.001494,0.01794,0.014561,0.00314,0.004739,-0.014332,0.019669,0.012403,-0.015614,0.004968,-0.038364,0.029799,-0.030996,-0.024521,-0.009697,0.028084,-0.008705,0.131769,0.01011,-0.011691,0.006943,-0.013377,0.008925,0.018663,-0.01276,-0.021596,0.006663,-0.032045,0.005558,0.031728,-0.026054,-0.022405,0.028969,0.003416,-0.001526,-0.01949,-0.011887,0.01011,0.033489,-0.00527,0.005959,-0.001555,-0.008612,0.005122,-0.00318,-0.000195,0.009537,0.012897,-0.003403,0.011102,0.006896,0.011066,0.011671,0.008703,0.004254,0.001031,-0.0116,-0.011691,-0.00527,0.024025,0.000955,-0.006949,-0.00774,-0.005725,0.001296,0.005903,0.002306,-0.012549,0.001157,-0.010518,0.01018,0.011986,-0.012732,0.008327,-0.004137,-0.01295,-0.001494,0.006943,0.005959,0.000955,0.021025,0.001354,-0.000792,0.001407,0.003171,0.005353,0.004877,-9.9e-05,-0.001969,0.003027,-0.006067,-0.008541,0.000808,0.002619,0.0064,0.060174,0.01794,-0.013377,-0.001555,-0.006949,0.001354,0.0289,0.029375,0.032262,0.020139,0.032135,0.029436,0.045118,-0.00729,0.009749,0.014607,-0.002093,0.011043,-0.013829,0.005338,0.067302,0.014561,0.008925,-0.008612,-0.00774,-0.000792,0.029375,0.04,0.038477,0.023387,0.038117,0.039715,0.054815,0.000806,-0.009,-0.004341,-0.003614,0.003506,0.003067,-0.011039,0.071363,0.00314,0.018663,0.005122,-0.005725,0.001407,0.032262,0.038477,0.046656,0.028108,0.042739,0.045692,0.056919,-0.012042,-0.007692,-0.014788,-0.014253,0.015766,-0.008102,0.003984,0.042728,0.004739,-0.01276,-0.00318,0.001296,0.003171,0.020139,0.023387,0.028108,0.019881,0.024495,0.025843,0.037117,-0.002608,0.009204,0.009399,-0.012174,-0.012469,0.005045,0.001803,0.069737,-0.014332,-0.021596,-0.000195,0.005903,0.005353,0.032135,0.038117,0.042739,0.024495,0.051076,0.043865,0.057811,0.003561,0.009091,-0.006,-0.026102,-0.012399,-0.014916,-0.003755,0.067869,0.019669,0.006663,0.009537,0.002306,0.004877,0.029436,0.039715,0.045692,0.025843,0.043865,0.052441,0.0593,-0.010396,-0.009802,0.012505,-0.011121,-0.017379,0.011241,0.006627,0.112225,0.012403,-0.032045,0.012897,-0.012549,-9.9e-05,0.045118,0.054815,0.056919,0.037117,0.057811,0.0593,0.104976,0.009443,0.017365,-0.011582,-0.002071,-0.013717,-0.006249,-0.007936,-0.01565,-0.015614,0.005558,-0.003403,0.001157,-0.001969,-0.00729,0.000806,-0.012042,-0.002608,0.003561,-0.010396,0.009443,0.026569,-0.013572,-0.014986,0.006044,-0.005121,-0.003084,0.005723,-0.001046,0.004968,0.031728,0.011102,-0.010518,0.003027,0.009749,-0.009,-0.007692,0.009204,0.009091,-0.009802,0.017365,-0.013572,0.119025,-0.009413,-0.009919,0.016502,0.001306,-0.014274,0.01756,-0.038364,-0.026054,0.006896,0.01018,-0.006067,0.014607,-0.004341,-0.014788,0.009399,-0.006,0.012505,-0.011582,-0.014986,-0.009413,0.087025,0.012504,-0.027838,-0.023129,-0.012035,0.000112,0.029799,-0.022405,0.011066,0.011986,-0.008541,-0.002093,-0.003614,-0.014253,-0.012174,-0.026102,-0.011121,-0.002071,0.006044,-0.009919,0.012504,0.120409,0.012814,0.012569,-0.004154,-0.007471,-0.030996,0.028969,0.011671,-0.012732,0.000808,0.011043,0.003506,0.015766,-0.012469,-0.012399,-0.017379,-0.013717,-0.005121,0.016502,-0.027838,0.012814,0.081796,-0.003027,-0.004929,-0.024739,-0.024521,0.003416,0.008703,0.008327,0.002619,-0.013829,0.003067,-0.008102,0.005045,-0.014916,0.011241,-0.006249,-0.003084,0.001306,-0.023129,0.012569,-0.003027,0.0576]::DOUBLE[] AS cov, 5 AS k, 0.35 AS cap;
+
+# Must reach the reference optimum.
+query I
+SELECT round(opt_portfolio_best_of(r,cov,k,cap).sharpe, 4) FROM p7;
+----
+5.3293
+
+# ... and must not EXCEED it: a Sharpe above the enumerated best would mean
+# the weights violate the cap or the volatility is being under-computed.
+query I
+SELECT opt_portfolio_best_of(r,cov,k,cap).sharpe <= 5.3293 FROM p7;
+----
+true
+
+# Buying the top returns is the trap, and must be clearly beaten.
+query I
+SELECT opt_portfolio_top_return(r,cov,k,cap).sharpe < 1.0 FROM p7;
+----
+true
+
+# Constraints hold: at most k holdings, no weight over the cap, weights sum to 1.
+query I
+SELECT len(list_filter(opt_portfolio_best_of(r,cov,k,cap).weights, w -> w > 1e-9)) <= 5 FROM p7;
+----
+true
+
+query I
+SELECT bool_and(w <= 0.35 + 1e-9) FROM (
+  SELECT unnest(opt_portfolio_best_of(r,cov,k,cap).weights) AS w FROM p7);
+----
+true
+
+query I
+SELECT abs(list_sum(opt_portfolio_best_of(r,cov,k,cap).weights) - 1.0) < 1e-6 FROM p7;
+----
+true
