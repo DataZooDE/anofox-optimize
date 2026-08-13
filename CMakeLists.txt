@@ -66,6 +66,14 @@ if(ANOFOX_TELEMETRY_ENABLED)
         target_sources(${TGT} PRIVATE $<TARGET_OBJECTS:posthog_telemetry_obj>)
         target_compile_definitions(${TGT} PRIVATE ANOFOX_TELEMETRY_ENABLED)
         target_link_libraries(${TGT} OpenSSL::SSL OpenSSL::Crypto)
+        if(WIN32)
+            # iphlpapi: PostHogTelemetry::GetMacAddress calls GetAdaptersInfo.
+            # Without this the Windows link fails with
+            #   unresolved external symbol __imp_GetAdaptersInfo
+            # which is how it failed on the first CI run. anofox-statistics
+            # links it under the same condition.
+            target_link_libraries(${TGT} iphlpapi)
+        endif()
     endforeach()
 endif()
 

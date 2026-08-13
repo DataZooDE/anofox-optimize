@@ -61,8 +61,11 @@ Packing FitPack(const vector<double> &sizes, double capacity,
 }
 
 Packing FirstFitDecreasing(const vector<double> &sizes, double capacity) {
+	// Explicit -> idx_t: `loads.size()` is size_type, which is the same
+	// width as idx_t on Linux but NOT on macOS x86_64, where deducing two
+	// different return types is a hard error. Caught by the first CI run.
 	return FitPack(sizes, capacity, OrderBySizeDesc(sizes),
-	               [](const vector<double> &loads, double size, double cap) {
+	               [](const vector<double> &loads, double size, double cap) -> idx_t {
 		               for (idx_t i = 0; i < loads.size(); i++) {
 			               if (loads[i] + size <= cap) {
 				               return i;
@@ -108,7 +111,7 @@ Packing NextFit(const vector<double> &sizes, double capacity) {
 	vector<idx_t> order(sizes.size());
 	std::iota(order.begin(), order.end(), 0);
 	return FitPack(sizes, capacity, order,
-	               [](const vector<double> &loads, double size, double cap) {
+	               [](const vector<double> &loads, double size, double cap) -> idx_t {
 		               if (!loads.empty() && loads.back() + size <= cap) {
 			               return loads.size() - 1;
 		               }
