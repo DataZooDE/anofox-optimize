@@ -1,0 +1,74 @@
+# name: test/sql/vectorization.test
+# description: correctness when arguments are literals, selection vectors or constants
+# group: [anofox_optimize]
+#
+# A sibling extension in this family reads past a one-element buffer whenever a
+# LITERAL argument is mixed with a column over more than one row: its EOQ
+# function returns the right answer for row 1 and NULL for rows 2..n. That is
+# undefined behaviour, and it is invisible in single-row tests — which is the
+# only kind most extensions have.
+#
+# It is also the single most natural way to call these functions
+# (`opt_pack_best_of(sizes, 10.0)` over a table), so it is pinned here.
+
+require anofox_optimize
+
+statement ok
+CREATE TABLE v AS SELECT * FROM (VALUES
+  (1, [4.0,8.0,1.0]), (2, [5.0,5.0,5.0]), (3, [9.0,9.0,9.0]),
+  (4, [2.0,2.0,2.0]), (5, [7.0,7.0,7.0]), (6, [1.0,1.0,1.0])
+) AS t(id, sizes);
+
+# Literal capacity against a column, over six rows. Hand-checked:
+# [4,8,1]->8+1,4 = 2   [5,5,5]->5+5,5 = 2   [9,9,9]-> 3
+# [2,2,2]->6 total = 1 [7,7,7]-> 3          [1,1,1]->3 total = 1
+query II
+SELECT id, opt_pack_best_of(sizes, 10.0).bins_used FROM v ORDER BY id;
+----
+1	2
+2	2
+3	3
+4	1
+5	3
+6	1
+
+# Two literal scalar arguments alongside a column.
+query II
+SELECT id, opt_knapsack_exact(sizes, sizes, 10.0).total_value FROM v ORDER BY id;
+----
+1	9.0
+2	10.0
+3	9.0
+4	6.0
+5	7.0
+6	3.0
+
+# A selection vector: filtered rows must get THEIR OWN answers, not the
+# answers of the first rows in the chunk.
+query II
+SELECT id, opt_pack_best_of(sizes, 10.0).bins_used FROM v WHERE id > 3 ORDER BY id;
+----
+4	1
+5	3
+6	1
+
+# Two branches over the same column: each row must be answered by the branch
+# it actually took.
+query II
+SELECT id, CASE WHEN id % 2 = 0 THEN opt_pack_best_of(sizes, 10.0).bins_used
+                ELSE opt_pack_next_fit(sizes, 10.0).bins_used END
+FROM v ORDER BY id;
+----
+1	2
+2	2
+3	3
+4	1
+5	3
+6	1
+
+# A constant-folded call must agree with the same call over a column.
+query I
+SELECT (SELECT opt_pack_best_of([4.0,8.0,1.0], 10.0).bins_used)
+     = (SELECT opt_pack_best_of(sizes, 10.0).bins_used FROM v WHERE id = 1);
+----
+true
