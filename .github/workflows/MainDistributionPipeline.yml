@@ -24,9 +24,11 @@ jobs:
       duckdb_version: v1.4.5
       ci_tools_version: v1.4-andium
       extension_name: anofox_optimize
-      enable_rust: true
-      # windows_amd64_rtools: only needed for R package builds
-      # windows_amd64_mingw: rtools42 MinGW lacks libbcrypt.a needed by Rust getrandom 0.3+
+      # windows_amd64_rtools: only needed for R package builds.
+      # windows_amd64_mingw: this extension links openssl through vcpkg (for
+      # telemetry) and that toolchain does not provide it reliably. NOTE: this
+      # is NOT the Rust/getrandom reason the sibling repos give -- there is no
+      # Rust here.
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
   duckdb-lts-smoke-test:
@@ -62,9 +64,11 @@ jobs:
       duckdb_version: v1.5.5
       ci_tools_version: v1.5-variegata
       extension_name: anofox_optimize
-      enable_rust: true
-      # windows_amd64_rtools: only needed for R package builds
-      # windows_amd64_mingw: rtools42 MinGW lacks libbcrypt.a needed by Rust getrandom 0.3+
+      # windows_amd64_rtools: only needed for R package builds.
+      # windows_amd64_mingw: this extension links openssl through vcpkg (for
+      # telemetry) and that toolchain does not provide it reliably. NOTE: this
+      # is NOT the Rust/getrandom reason the sibling repos give -- there is no
+      # Rust here.
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
   duckdb-latest-smoke-test:
@@ -89,42 +93,3 @@ jobs:
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
       deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
       deploy_versioned: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
-
-  build-and-test-rust:
-    name: Rust Tests
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          submodules: 'recursive'
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-
-      - name: Cache cargo
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
-
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Clippy
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
-      - name: Build Rust library
-        run: cargo build --release
-
-      - name: Run Rust tests
-        run: cargo test --all-features

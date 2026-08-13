@@ -1,0 +1,24 @@
+# Descriptor for duckdb/community-extensions.
+#
+# This file is NOT read from this repository. To publish, open a PR against
+# https://github.com/duckdb/community-extensions adding it as
+#   extensions/anofox_optimize/description.yml
+# The `ref` below must point at the commit you want built, and it has to be
+# moved forward on every release — the registry builds exactly that ref.
+extension:
+  name: anofox_optimize
+  description: Combinatorial decision algorithms as SQL — bin packing, knapsack, wave batching, sequencing, scheduling, assortment and portfolio selection.
+  language: C++
+  build: cmake
+  # windows_amd64_rtools: R packaging only.
+  # windows_amd64_mingw: openssl (pulled in for telemetry) is not reliably
+  #   available on that toolchain.
+  # wasm_*: openssl again — no wasm build is attempted.
+  excluded_platforms: "windows_amd64_rtools;windows_amd64_mingw;wasm_mvp;wasm_eh;wasm_threads;"
+  license: BSL 1.1
+  requires_toolchains: "cmake, openssl"
+  maintainers:
+    - jrosskopf
+repo:
+  github: DataZooDE/anofox-optimize
+  ref: 0539621a2e5fc49e12d17c829eb863ad9d9abab2
