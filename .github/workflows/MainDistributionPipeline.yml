@@ -24,6 +24,12 @@ jobs:
       duckdb_version: v1.4.5
       ci_tools_version: v1.4-andium
       extension_name: anofox_optimize
+      # The v1.4-andium default vcpkg pin (ce613c4) builds openssl on Windows
+      # through an msys2-runtime 3.5.4-2 package that the msys2 mirrors have
+      # since deleted, so every mirror 404s and the Windows job dies in
+      # `vcpkg install`. This is the pin the v1.5 line already uses, where the
+      # same openssl build succeeds.
+      vcpkg_commit: 84bab45d415d22042bd0b9081aea57f362da3f35
       # windows_amd64_rtools: only needed for R package builds.
       # windows_amd64_mingw: this extension links openssl through vcpkg (for
       # telemetry) and that toolchain does not provide it reliably. NOTE: this

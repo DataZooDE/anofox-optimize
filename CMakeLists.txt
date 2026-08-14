@@ -74,6 +74,13 @@ if(ANOFOX_TELEMETRY_ENABLED)
             # links it under the same condition.
             target_link_libraries(${TGT} iphlpapi)
         endif()
+        if(APPLE)
+            # CoreFoundation + IOKit: PostHogTelemetry::GetMachineId reads the
+            # platform UUID via IORegistryEntryCreateCFProperty. Without these
+            # the macOS link of libduckdb.dylib fails with undefined _CFRelease,
+            # _IORegistryEntryFromPath, _kIOMainPortDefault, ...
+            target_link_libraries(${TGT} "-framework CoreFoundation" "-framework IOKit")
+        endif()
     endforeach()
 endif()
 
