@@ -219,7 +219,8 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(wave_vec, offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"items", "priorities", "capacity"}, {"optimize", "batching"});
 }
 
 static void AddBatchingFamily(ExtensionLoader &loader, const string &short_name,

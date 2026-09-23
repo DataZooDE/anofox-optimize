@@ -205,7 +205,8 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(order_vec, order_offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"setup_matrix", "n_jobs"}, {"optimize", "sequencing"});
 }
 
 static void AddSequencingFamily(ExtensionLoader &loader, const string &short_name,

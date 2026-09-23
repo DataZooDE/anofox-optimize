@@ -34,10 +34,10 @@ void RegisterVersionFunction(ExtensionLoader &loader) {
 	// exception, which made "every function has a short form" untrue.
 	RegisterScalarOrAlias(
 	    loader, ScalarFunction("anofox_optimize_version", {}, LogicalType::VARCHAR, VersionFunction),
-	    description, "anofox_optimize_version()", "");
+	    description, "anofox_optimize_version()", "", {}, {"optimize", "meta"});
 	RegisterScalarOrAlias(loader,
 	                      ScalarFunction("opt_version", {}, LogicalType::VARCHAR, VersionFunction),
-	                      description, "", "anofox_optimize_version");
+	                      description, "", "anofox_optimize_version", {}, {"optimize", "meta"});
 }
 
 } // namespace duckdb

@@ -413,7 +413,8 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(order_vec, offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"processing_times", "due_dates", "priorities", "setup_matrix", "n_jobs"}, {"optimize", "scheduling"});
 }
 
 static void AddSchedulingFamily(ExtensionLoader &loader, const string &short_name,

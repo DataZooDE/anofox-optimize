@@ -565,7 +565,9 @@ static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(w_vec, offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"expected_returns", "covariance_matrix", "max_holdings", "max_position_size"},
+	                      {"optimize", "portfolio"});
 }
 
 static void AddPortfolioFamily(ExtensionLoader &loader, const string &short_name,
@@ -645,7 +647,9 @@ static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(listed_vec, offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"margins", "base_demands", "substitution_matrix", "max_listed"},
+	                      {"optimize", "assortment"});
 }
 
 static void AddAssortmentFamily(ExtensionLoader &loader, const string &short_name,
