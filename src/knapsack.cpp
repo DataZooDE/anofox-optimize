@@ -286,7 +286,8 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(sel_vec, sel_offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"values", "weights", "capacity"}, {"optimize", "knapsack"});
 }
 
 static void AddKnapsackFamily(ExtensionLoader &loader, const string &short_name,

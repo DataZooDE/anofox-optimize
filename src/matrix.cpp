@@ -156,8 +156,10 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 	};
 	const string canonical = "anofox_optimize_matrix_from_triples";
 	RegisterScalarOrAlias(loader, make(canonical), description,
-	                      canonical + "([1,2], [2,1], [0.5, 0.5], 2, 1)", "");
-	RegisterScalarOrAlias(loader, make("opt_matrix_from_triples"), description, "", canonical);
+	                      canonical + "([1,2], [2,1], [0.5, 0.5], 2, 1)", "",
+	                      {"from", "to", "value", "n", "index_base"}, {"optimize", "matrix"});
+	RegisterScalarOrAlias(loader, make("opt_matrix_from_triples"), description, "", canonical,
+	                      {"from", "to", "value", "n", "index_base"}, {"optimize", "matrix"});
 }
 
 } // namespace duckdb

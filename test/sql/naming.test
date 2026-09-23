@@ -17,17 +17,43 @@ SELECT (SELECT count(*) FROM c WHERE n NOT IN (SELECT n FROM s))
 ----
 0
 
-# Short forms are TRUE ALIASES and carry no description of their own.
-# They previously duplicated 19,350 characters of documentation, which
-# anofox-evolve charges to EVERY prompt because it builds its vocabulary
-# from duckdb_functions() without deduplicating. anofox-statistics uses
-# alias_of in 107 places and anofox-forecast in 38; this extension used it
-# in none.
+# Short forms are TRUE ALIASES -- they set alias_of -- AND they carry the
+# description too.
+#
+# They deliberately did not, once. Repeating the prose cost 19,350 characters
+# on every anofox-evolve prompt, because evolve builds its vocabulary from
+# duckdb_functions() without deduplicating, and this block is the stable cache
+# prefix so the bill included a forfeited cache discount.
+#
+# But that was a defect in one consumer that reads the whole catalog at once,
+# paid for by every other consumer. The main audience for this metadata is an
+# agent looking up ONE function by name: handed `opt_pack_best_of` it got
+# nothing back and had to know to chase alias_of. The deduplication moved to
+# render_vocabulary in anofox-evolve, which now emits an alias as a bare
+# signature tagged [alias of ...]. That fix must stay landed; if it is ever
+# reverted, revert it there, not here.
 query I
-SELECT coalesce(sum(length(coalesce(description,''))), 0)
-FROM duckdb_functions() WHERE function_name LIKE 'opt_%';
+SELECT count(*) = 0 FROM duckdb_functions()
+WHERE function_name LIKE 'opt_%' AND coalesce(description,'') = '';
 ----
-0
+true
+
+# An alias must be linked to its canonical entry, not merely look like it.
+query I
+SELECT count(*) = 0 FROM duckdb_functions()
+WHERE function_name LIKE 'opt_%' AND alias_of IS NULL;
+----
+true
+
+# ...and say the same thing as the canonical entry it points at.
+query I
+SELECT (SELECT any_value(description) FROM duckdb_functions()
+        WHERE function_name = 'opt_pack_best_of')
+       IS NOT DISTINCT FROM
+       (SELECT any_value(description) FROM duckdb_functions()
+        WHERE function_name = 'anofox_optimize_pack_best_of');
+----
+true
 
 # The canonical entries must still be documented — an alias that saved
 # tokens by dropping BOTH copies would be worse than the duplication.
@@ -48,3 +74,32 @@ query I
 SELECT count(*) FROM duckdb_functions() WHERE function_name LIKE '%optimis%';
 ----
 0
+
+# ============================================================================
+# Real parameter names and categories
+#
+# Every algorithm in a family shares one signature, so the names are attached
+# once per family rather than once per function. They are taken from the
+# ReadList()/exception strings in the implementations, so a caller who hits
+# "processing_times must be >= 0" can find the argument being complained about.
+# ============================================================================
+
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE (function_name LIKE 'anofox_optimize_%' OR function_name LIKE 'opt_%')
+  AND (list_contains(parameters, 'col0') OR len(categories) = 0
+       OR len(examples) = 0);
+----
+0
+
+query I
+SELECT DISTINCT parameters FROM duckdb_functions()
+WHERE function_name = 'opt_pack_best_of';
+----
+[items, capacity]
+
+query I
+SELECT DISTINCT parameters FROM duckdb_functions()
+WHERE function_name = 'anofox_optimize_schedule_atcs';
+----
+[processing_times, due_dates, priorities, setup_matrix, n_jobs]

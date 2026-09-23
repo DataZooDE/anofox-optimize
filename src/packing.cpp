@@ -486,7 +486,8 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 		    ListVector::SetListSize(assign_vec, assign_offset);
 	    });
 
-	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of);
+	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
+	                      {"items", "capacity"}, {"optimize", "packing"});
 }
 
 //! Register a packing algorithm under BOTH the canonical
