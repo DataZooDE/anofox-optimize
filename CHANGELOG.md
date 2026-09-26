@@ -1,6 +1,25 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## v2026.09.26
+
+First release. Versions use CalVer (`vYYYY.MM.DD`, the date the binary set was cut),
+matching the rest of the anofox and erpl extensions.
+
+### Documentation
+
+- All 80 catalog entries document themselves in `duckdb_functions()`: description,
+  runnable example, real parameter names and categories, up from 40 of 80. An agent
+  connected to a DuckDB database can only learn what an extension does by querying that
+  view.
+- Aliases (`opt_*`) now carry the full description alongside `alias_of`, rather than
+  being left bare. An agent handed the short name should find documentation at the short
+  name, not have to follow a pointer. The prompt-size concern that motivated the old
+  behaviour moved to anofox-evolve, which renders an alias as a bare signature tagged
+  `[alias of ...]`.
+- Parameter names come from the `ReadList()`/exception strings in the implementations, so
+  a caller who hits `processing_times must be >= 0` can find the argument being
+  complained about.
+
 
 First release. Combinatorial **decision** algorithms as DuckDB functions,
 so an LLM-driven search can change algorithm by editing text.
