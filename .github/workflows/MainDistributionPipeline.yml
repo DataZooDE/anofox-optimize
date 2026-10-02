@@ -69,10 +69,10 @@ jobs:
       deploy_versioned: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
 
   duckdb-latest-build:
-    name: Build extension binaries (DuckDB latest v1.5.5)
+    name: Build extension binaries (DuckDB latest v1.5.6)
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v1.5-variegata
     with:
-      duckdb_version: v1.5.5
+      duckdb_version: v1.5.6
       ci_tools_version: v1.5-variegata
       extension_name: anofox_optimize
       # windows_amd64_rtools: only needed for R package builds.
@@ -83,22 +83,22 @@ jobs:
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
   duckdb-latest-smoke-test:
-    name: Smoke test (v1.5.5)
+    name: Smoke test (v1.5.6)
     needs: duckdb-latest-build
     uses: ./.github/workflows/_extension_smoke_test.yml
     with:
-      duckdb_version: v1.5.5
+      duckdb_version: v1.5.6
       extension_name: anofox_optimize
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
   duckdb-latest-deploy:
-    name: Deploy extension binaries (v1.5.5)
+    name: Deploy extension binaries (v1.5.6)
     needs: [duckdb-latest-build, duckdb-latest-smoke-test]
     if: ${{ !cancelled() }}
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:
-      duckdb_version: v1.5.5
+      duckdb_version: v1.5.6
       ci_tools_version: v1.5-variegata
       extension_name: anofox_optimize
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
