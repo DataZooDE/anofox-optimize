@@ -79,7 +79,7 @@ option to move away from — hence `opt_pack_next_fit`.
   renamed to `_optimized`.
 - Version comes from the build (`EXT_VERSION_ANOFOX_OPTIMIZE`), never a
   hardcoded constant.
-- BSL 1.1, `datazoo-banner`, DuckDB v1.5.5.
+- BSL 1.1, `datazoo-banner`, DuckDB v1.5.6.
 
 ## Not yet present
 
