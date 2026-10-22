@@ -1,0 +1,194 @@
+# name: test/sql/nulls_and_chunks.test
+# description: NULL rows and output child validity across reused vector chunks
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+statement ok
+CREATE TABLE followup_small AS SELECT * FROM (VALUES
+  (1, [1.0]::DOUBLE[]), (2, NULL::DOUBLE[]), (3, [1.0]::DOUBLE[])
+) t(id, x);
+
+# packing: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_pack_best_of(x,10.0) AS v FROM followup_small)
+SELECT id, v IS NULL, v.bins_used IS NULL AND v.assignment IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# knapsack: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_knapsack_exact(x,x,10.0) AS v FROM followup_small)
+SELECT id, v IS NULL, v.total_value IS NULL AND v.total_weight IS NULL AND v.selected IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# sequencing: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_sequence_as_given([0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_small)
+SELECT id, v IS NULL, v.total_setup IS NULL AND v.order IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# scheduling: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_schedule_edd([1.0]::DOUBLE[],[1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0,0.0,0.0,0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_small)
+SELECT id, v IS NULL, v.makespan IS NULL AND v.total_weighted_tardiness IS NULL AND v.order IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# batching: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_wave_best_of([1.0]::DOUBLE[],[1.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::DOUBLE ELSE 10.0 END) AS v FROM followup_small)
+SELECT id, v IS NULL, v.avg_weighted_wave IS NULL AND v.wave IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# portfolio: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_portfolio_top_return([1.0]::DOUBLE[],[0.04]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END,1.0) AS v FROM followup_small)
+SELECT id, v IS NULL, v.sharpe IS NULL AND v.expected_return IS NULL AND v.volatility IS NULL AND v.weights IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# assortment: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_assortment_top_margin([1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_small)
+SELECT id, v IS NULL, v.captured_margin IS NULL AND v.listed IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# assortment recapture: NULL result and all struct fields, with valid neighbours.
+query III
+WITH r AS (SELECT id, opt_assortment_recapture_top_margin([1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_small)
+SELECT id, v IS NULL, v.captured_margin IS NULL AND v.listed IS NULL FROM r ORDER BY id;
+----
+1	false	false
+2	true	true
+3	false	false
+
+# Matrix is a list result; exercise NULL in each of its three outer lists.
+query II
+WITH t(id,f,d,v) AS (VALUES
+  (1,[1]::BIGINT[],[1]::BIGINT[],[1.0]::DOUBLE[]),
+  (2,NULL::BIGINT[],[]::BIGINT[],[]::DOUBLE[]),
+  (3,[1]::BIGINT[],[1]::BIGINT[],[1.0]::DOUBLE[]))
+SELECT id, opt_matrix_from_triples(f,d,v,1,1) IS NULL FROM t ORDER BY id;
+----
+1	false
+2	true
+3	false
+
+statement ok
+CREATE TABLE followup_big AS SELECT i,
+  CASE WHEN i % 97 = 0 THEN NULL::DOUBLE[]
+       WHEN i % 3 = 0 THEN [1.0,1.0]::DOUBLE[] ELSE [1.0]::DOUBLE[] END AS x
+FROM range(5000) t(i);
+
+# packing: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_pack_best_of(x,10.0) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.bins_used IS NULL OR v.assignment IS NULL OR
+    list_count(list_filter(v.assignment, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# knapsack: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_knapsack_exact(x,x,10.0) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.total_value IS NULL OR v.total_weight IS NULL OR v.selected IS NULL OR
+    list_count(list_filter(v.selected, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# sequencing: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_sequence_as_given([0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.total_setup IS NULL OR v.order IS NULL OR
+    list_count(list_filter(v.order, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# scheduling: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_schedule_edd([1.0]::DOUBLE[],[1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0,0.0,0.0,0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.makespan IS NULL OR v.total_weighted_tardiness IS NULL OR v.order IS NULL OR
+    list_count(list_filter(v.order, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# batching: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_wave_best_of([1.0]::DOUBLE[],[1.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::DOUBLE ELSE 10.0 END) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.avg_weighted_wave IS NULL OR v.wave IS NULL OR
+    list_count(list_filter(v.wave, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# portfolio: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_portfolio_top_return([1.0]::DOUBLE[],[0.04]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END,1.0) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.sharpe IS NULL OR v.expected_return IS NULL OR v.volatility IS NULL OR v.weights IS NULL OR
+    list_count(list_filter(v.weights, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# assortment: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_assortment_top_margin([1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.captured_margin IS NULL OR v.listed IS NULL OR
+    list_count(list_filter(v.listed, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+# assortment recapture: 5000 rows force output-vector reuse across chunks.
+query I
+WITH r AS (SELECT x IS NULL AS absent, opt_assortment_recapture_top_margin([1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0]::DOUBLE[],CASE WHEN x IS NULL THEN NULL::BIGINT ELSE 1 END) AS v FROM followup_big)
+SELECT count(*) FILTER (WHERE absent != (v IS NULL) OR
+  (NOT absent AND (v.captured_margin IS NULL OR v.listed IS NULL OR
+    list_count(list_filter(v.listed, lambda e: e IS NULL)) != 0))) FROM r;
+----
+0
+
+query I
+WITH t AS (SELECT i, CASE WHEN i % 97 = 0 THEN NULL::BIGINT[] ELSE [1]::BIGINT[] END f,
+ CASE WHEN i % 97 = 0 THEN NULL::BIGINT[] ELSE [1]::BIGINT[] END d,
+ CASE WHEN i % 97 = 0 THEN NULL::DOUBLE[] ELSE [1.0]::DOUBLE[] END v FROM range(5000) t(i)),
+r AS (SELECT f IS NULL absent, opt_matrix_from_triples(f,d,v,1,1) m FROM t)
+SELECT count(*) FILTER (WHERE absent != (m IS NULL) OR (NOT absent AND
+ list_count(list_filter(m, lambda e: e IS NULL)) != 0)) FROM r;
+----
+0
+
+# The optimizer is disabled so all-constant callback paths run across chunks.
+statement ok
+PRAGMA disable_optimizer;
+
+query I
+SELECT count(DISTINCT opt_pack_best_of([1.0], 10.0)) FROM range(3000);
+----
+1
+
+statement ok
+PRAGMA enable_optimizer;

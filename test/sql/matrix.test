@@ -44,3 +44,32 @@ statement error
 SELECT opt_matrix_from_triples([1,2]::BIGINT[], [1]::BIGINT[], [1.0]::DOUBLE[], 2, 1);
 ----
 same length
+
+# All three outer lists NULL: Debug must not return a non-NULL result.
+query II
+WITH t(id, f, dst, v) AS (VALUES
+  (1, [1]::BIGINT[], [1]::BIGINT[], [1.0]::DOUBLE[]),
+  (2, NULL::BIGINT[], NULL::BIGINT[], NULL::DOUBLE[]),
+  (3, [1]::BIGINT[], [1]::BIGINT[], [1.0]::DOUBLE[]))
+SELECT id, opt_matrix_from_triples(f,dst,v,1,1) IS NULL FROM t ORDER BY id;
+----
+1	false
+2	true
+3	false
+
+# Each NULL outer list must produce a NULL matrix, with valid neighbours.
+query II
+WITH t(id, f, dst, v) AS (VALUES
+  (1, [1]::BIGINT[], [2]::BIGINT[], [3.0]::DOUBLE[]),
+  (2, NULL::BIGINT[], []::BIGINT[], []::DOUBLE[]),
+  (3, []::BIGINT[], NULL::BIGINT[], []::DOUBLE[]),
+  (4, []::BIGINT[], []::BIGINT[], NULL::DOUBLE[]),
+  (5, [2]::BIGINT[], [1]::BIGINT[], [4.0]::DOUBLE[]))
+SELECT id, coalesce(CAST(opt_matrix_from_triples(f,dst,v,2,1) AS VARCHAR), 'NULL')
+FROM t ORDER BY id;
+----
+1	[0.0, 3.0, 0.0, 0.0]
+2	NULL
+3	NULL
+4	NULL
+5	[0.0, 0.0, 4.0, 0.0]

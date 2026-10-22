@@ -72,3 +72,63 @@ SELECT (SELECT opt_pack_best_of([4.0,8.0,1.0], 10.0).bins_used)
      = (SELECT opt_pack_best_of(sizes, 10.0).bins_used FROM v WHERE id = 1);
 ----
 true
+
+# Compare the entire list/struct, including every child, across folding modes.
+statement ok
+CREATE TABLE shape_inputs AS SELECT [1.0]::DOUBLE[] x, [0.0]::DOUBLE[] z,
+  [0.04]::DOUBLE[] cov, [0.0,0.0,0.0,0.0]::DOUBLE[] setup,
+  [1]::BIGINT[] f;
+
+# packing return shape.
+query I
+SELECT (SELECT opt_pack_best_of([1.0]::DOUBLE[],10.0)) = (SELECT opt_pack_best_of(x,10.0) FROM shape_inputs);
+----
+true
+
+# knapsack return shape.
+query I
+SELECT (SELECT opt_knapsack_exact([1.0]::DOUBLE[],[1.0]::DOUBLE[],10.0)) = (SELECT opt_knapsack_exact(x,x,10.0) FROM shape_inputs);
+----
+true
+
+# sequencing return shape.
+query I
+SELECT (SELECT opt_sequence_as_given([0.0]::DOUBLE[],1)) = (SELECT opt_sequence_as_given(z,1) FROM shape_inputs);
+----
+true
+
+# scheduling return shape.
+query I
+SELECT (SELECT opt_schedule_edd([1.0]::DOUBLE[],[1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0,0.0,0.0,0.0]::DOUBLE[],1)) = (SELECT opt_schedule_edd(x,x,x,setup,1) FROM shape_inputs);
+----
+true
+
+# batching return shape.
+query I
+SELECT (SELECT opt_wave_best_of([1.0]::DOUBLE[],[1.0]::DOUBLE[],10.0)) = (SELECT opt_wave_best_of(x,x,10.0) FROM shape_inputs);
+----
+true
+
+# portfolio return shape.
+query I
+SELECT (SELECT opt_portfolio_top_return([1.0]::DOUBLE[],[0.04]::DOUBLE[],1,1.0)) = (SELECT opt_portfolio_top_return(x,cov,1,1.0) FROM shape_inputs);
+----
+true
+
+# assortment return shape.
+query I
+SELECT (SELECT opt_assortment_top_margin([1.0]::DOUBLE[],[1.0]::DOUBLE[],[0.0]::DOUBLE[],1)) = (SELECT opt_assortment_top_margin(x,x,z,1) FROM shape_inputs);
+----
+true
+
+# matrix return shape.
+query I
+SELECT (SELECT opt_matrix_from_triples([1]::BIGINT[],[1]::BIGINT[],[1.0]::DOUBLE[],1,1)) = (SELECT opt_matrix_from_triples(f,f,x,1,1) FROM shape_inputs);
+----
+true
+
+# The constant-NULL path also returns a NULL constant vector.
+query I
+SELECT opt_pack_best_of(NULL::DOUBLE[], 10.0) IS NULL;
+----
+true
