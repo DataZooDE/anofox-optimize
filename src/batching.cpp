@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -111,7 +113,7 @@ Waves BestOfWaves(const vector<double> &items, const vector<double> &priority, d
 
 vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, idx_t expect) {
 	UnifiedVectorFormat data;
-	v.ToUnifiedFormat(count, data);
+	duckdb_compat::ToUnifiedFormat(v, count, data);
 	auto lists = UnifiedVectorFormat::GetData<list_entry_t>(data);
 	const auto li = data.sel->get_index(row);
 	if (!data.validity.RowIsValid(li)) {
@@ -119,7 +121,7 @@ vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, 
 	}
 	auto &child = ListVector::GetEntry(v);
 	UnifiedVectorFormat cd;
-	child.ToUnifiedFormat(ListVector::GetListSize(v), cd);
+	duckdb_compat::ToUnifiedFormat(child, ListVector::GetListSize(v), cd);
 	auto values = UnifiedVectorFormat::GetData<double>(cd);
 	const auto entry = lists[li];
 	if (expect && entry.length != expect) {
@@ -158,7 +160,7 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 	auto return_type = LogicalType::STRUCT({{"wave", LogicalType::LIST(LogicalType::UBIGINT)},
 	                                        {"avg_weighted_wave", LogicalType::DOUBLE}});
 	ScalarFunction function(
-	    name,
+	    duckdb_compat::FunctionName(name),
 	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::DOUBLE},
 	    return_type, [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
@@ -168,13 +170,13 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 		    const idx_t count = args.size();
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 		    UnifiedVectorFormat c_data;
-		    args.data[2].ToUnifiedFormat(count, c_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[2], count, c_data);
 		    auto caps = UnifiedVectorFormat::GetData<double>(c_data);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &wave_vec = *entries[0];
-		    auto wave_out = FlatVector::GetData<list_entry_t>(wave_vec);
-		    auto avg_out = FlatVector::GetData<double>(*entries[1]);
+		    auto &wave_vec = duckdb_compat::StructChild(entries[0]);
+		    auto wave_out = duckdb_compat::FlatData<list_entry_t>(wave_vec);
+		    auto avg_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
 		    idx_t offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -209,14 +211,15 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 			    wave_out[row].offset = offset;
 			    wave_out[row].length = w.wave.size();
 			    ListVector::Reserve(wave_vec, offset + w.wave.size());
-			    auto child = FlatVector::GetData<uint64_t>(ListVector::GetEntry(wave_vec));
+			    auto child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(wave_vec));
 			    for (idx_t i = 0; i < w.wave.size(); i++) {
 				    child[offset + i] = w.wave[i];
 			    }
 			    offset += w.wave.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(wave_vec)).SetAllValid(offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(wave_vec)).SetAllValid(offset);
 		    ListVector::SetListSize(wave_vec, offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,

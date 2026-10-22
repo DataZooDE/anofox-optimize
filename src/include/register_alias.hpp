@@ -3,8 +3,18 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
+#include "duckdb_compat.hpp"
 
 namespace duckdb {
+
+//! DuckDB 1.5.6 Debug's EvaluateScalar verifies that a callback receiving
+//! only constant arguments returns a constant vector, including NULL results.
+//! Keep this at every list/struct-returning callback's end.
+inline void FinishResult(DataChunk &args, Vector &result) {
+	if (args.AllConstant()) {
+		result.SetVectorType(VectorType::CONSTANT_VECTOR);
+	}
+}
 
 //! Register a scalar function, either as a canonical entry or as a TRUE
 //! ALIAS of one. BOTH carry the full documentation.
@@ -44,10 +54,14 @@ namespace duckdb {
 //! No parameter_types: all overloads within a family are identical, so a single
 //! description matches every one of them, and supplying types here would only
 //! create a way for the match to fail silently.
+//! All registered callbacks can throw on invalid input, so declare fallibility
+//! even when a particular valid invocation succeeds.
 inline void RegisterScalarOrAlias(ExtensionLoader &loader, ScalarFunction function,
                                   const string &description, const string &example,
                                   const string &alias_of, vector<string> parameter_names = {},
                                   vector<string> categories = {}) {
+	duckdb_compat::SetFallible(function);
+	duckdb_compat::NameParameters(function, parameter_names);
 	CreateScalarFunctionInfo info(std::move(function));
 	FunctionDescription desc;
 	desc.description = description;
@@ -56,7 +70,7 @@ inline void RegisterScalarOrAlias(ExtensionLoader &loader, ScalarFunction functi
 	desc.categories = std::move(categories);
 	info.descriptions.push_back(std::move(desc));
 	if (!alias_of.empty()) {
-		info.alias_of = alias_of;
+		info.alias_of = duckdb_compat::Ident(alias_of);
 		info.on_conflict = OnCreateConflict::ALTER_ON_CONFLICT;
 	}
 	loader.RegisterFunction(std::move(info));

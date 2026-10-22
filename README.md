@@ -1,7 +1,7 @@
 # anofox-optimize
 
 [![Main Extension Distribution Pipeline](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml/badge.svg)](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml)
-[![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.6-blue)](https://duckdb.org)
+[![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.6%20%7C%20v2.0.0-blue)](https://duckdb.org)
 [![License](https://img.shields.io/badge/license-BSL%201.1-green)](LICENSE)
 
 **Combinatorial decision algorithms as DuckDB functions.** Pack containers,
@@ -111,7 +111,7 @@ make release        # or: make debug
 make test
 ```
 
-Pure C++ — no Rust toolchain required. Built against DuckDB v1.5.6.
+Pure C++ — no Rust toolchain required. Built against DuckDB v1.5.6 and v2.0.0.
 
 ## Testing
 

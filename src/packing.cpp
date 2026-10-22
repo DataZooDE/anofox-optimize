@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
@@ -379,7 +381,7 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 	                         {"assignment", LogicalType::LIST(LogicalType::UBIGINT)}});
 
 	ScalarFunction function(
-	    name, {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::DOUBLE}, return_type,
+	    duckdb_compat::FunctionName(name), {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::DOUBLE}, return_type,
 	    [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
 #ifdef ANOFOX_TELEMETRY_ENABLED
 		    PostHogTelemetry::Instance().RecordFunctionCall(name);
@@ -388,20 +390,20 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 
 		    UnifiedVectorFormat list_data, cap_data;
-		    args.data[0].ToUnifiedFormat(count, list_data);
-		    args.data[1].ToUnifiedFormat(count, cap_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[0], count, list_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[1], count, cap_data);
 		    auto lists = UnifiedVectorFormat::GetData<list_entry_t>(list_data);
 		    auto caps = UnifiedVectorFormat::GetData<double>(cap_data);
 
 		    auto &child = ListVector::GetEntry(args.data[0]);
 		    UnifiedVectorFormat child_data;
-		    child.ToUnifiedFormat(ListVector::GetListSize(args.data[0]), child_data);
+		    duckdb_compat::ToUnifiedFormat(child, ListVector::GetListSize(args.data[0]), child_data);
 		    auto child_values = UnifiedVectorFormat::GetData<double>(child_data);
 
 		    auto &struct_entries = StructVector::GetEntries(result);
-		    auto bins_out = FlatVector::GetData<uint64_t>(*struct_entries[0]);
-		    auto &assign_vec = *struct_entries[1];
-		    auto assign_out = FlatVector::GetData<list_entry_t>(assign_vec);
+		    auto bins_out = duckdb_compat::FlatData<uint64_t>(duckdb_compat::StructChild(struct_entries[0]));
+		    auto &assign_vec = duckdb_compat::StructChild(struct_entries[1]);
+		    auto assign_out = duckdb_compat::FlatData<list_entry_t>(assign_vec);
 		    idx_t assign_offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -471,7 +473,7 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 			    assign_out[row].offset = assign_offset;
 			    assign_out[row].length = packing.assignment.size();
 			    ListVector::Reserve(assign_vec, assign_offset + packing.assignment.size());
-			    auto assign_child = FlatVector::GetData<uint64_t>(ListVector::GetEntry(assign_vec));
+			    auto assign_child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(assign_vec));
 			    for (idx_t i = 0; i < packing.assignment.size(); i++) {
 				    assign_child[assign_offset + i] = packing.assignment[i];
 			    }
@@ -482,8 +484,9 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 		    // chunk — the assignment would then read back as NULLs even
 		    // though every slot holds a real bin id. Mark the written
 		    // range valid. (Codex review finding, High.)
-		    FlatVector::Validity(ListVector::GetEntry(assign_vec)).SetAllValid(assign_offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(assign_vec)).SetAllValid(assign_offset);
 		    ListVector::SetListSize(assign_vec, assign_offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
