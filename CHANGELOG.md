@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v2026.10.22
+
+Builds on **DuckDB 2.0.0** and v1.5.6 (1.4.x is no longer supported).
 
 - Support DuckDB v2.0.0 alongside v1.5.6 using shared compatibility helpers.
 - Return NULL from matrix-from-triples when any outer triple list is NULL.
