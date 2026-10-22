@@ -26,6 +26,7 @@ jobs:
       duckdb_version: v2.0.0
       ci_tools_version: v2.0-cyanoptera
       extension_name: anofox_optimize
+      reduced_ci_mode: disabled
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
   # Loads the packaged 2.0 artifact into the official v2.0.0 CLI (the smoke script
