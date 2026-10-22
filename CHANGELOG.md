@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Support DuckDB v2.0.0 alongside v1.5.6 using shared compatibility helpers.
+- Return NULL from matrix-from-triples when any outer triple list is NULL.
+- Cover NULL rows, reused chunks, and constant list/struct results in SQL tests.
+
 ## v2026.09.26
 
 First release. Versions use CalVer (`vYYYY.MM.DD`, the date the binary set was cut),

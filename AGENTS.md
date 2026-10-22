@@ -61,11 +61,9 @@ option to move away from — hence `opt_pack_next_fit`.
 
 - Canonical `anofox_optimize_*` names with short `opt_*` aliases,
   registered as TRUE aliases (`info.alias_of`), as anofox-statistics does
-  in 107 places and anofox-forecast in 38. Only the canonical entry
-  carries a description: `duckdb_functions()` is where anofox-evolve gets
-  its prompt vocabulary and it does not deduplicate, so a description on
-  both names was charging ~19,350 characters (~5k tokens) to every prompt
-  of every generation.
+  in 107 places and anofox-forecast in 38. Both entries carry the full
+  description so lookup by either name works. anofox-evolve deduplicates
+  aliases when rendering its prompt vocabulary.
 - The alias SCHEME is a deliberate deviation. The siblings strip the
   namespace entirely (`anofox_stats_aic` -> `aic`, `anofox_fcst_ts_bias`
   -> `ts_bias`); applying that rule here would give bare `pack_best_of`,
@@ -79,10 +77,11 @@ option to move away from — hence `opt_pack_next_fit`.
   renamed to `_optimized`.
 - Version comes from the build (`EXT_VERSION_ANOFOX_OPTIMIZE`), never a
   hardcoded constant.
-- BSL 1.1, `datazoo-banner`, DuckDB v1.5.6.
+- Use `duckdb_compat` helpers for DuckDB API differences; no DuckDB-version `#if` at call sites.
+- Scalar callbacks with all-constant inputs must return a `CONSTANT_VECTOR`, including NULL results.
+- BSL 1.1, `datazoo-banner`, DuckDB v1.5.6 and v2.0.0.
 
-## Not yet present
+## Layout
 
-posthog telemetry, `docs/`, `scripts/`, CI workflows, and the Rust
-`crates/` layout the sibling extensions use. This extension is pure C++
-because the algorithms need no external crate.
+This extension is pure C++: the algorithms need no Rust crate. Telemetry,
+`docs/`, `scripts/`, and CI workflows are present.
