@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -144,7 +146,7 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 	                                        {"total_weight", LogicalType::DOUBLE}});
 
 	ScalarFunction function(
-	    name,
+	    duckdb_compat::FunctionName(name),
 	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::DOUBLE},
 	    return_type, [fn, exact, name](DataChunk &args, ExpressionState &, Vector &result) {
@@ -155,9 +157,9 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 
 		    UnifiedVectorFormat v_data, w_data, c_data;
-		    args.data[0].ToUnifiedFormat(count, v_data);
-		    args.data[1].ToUnifiedFormat(count, w_data);
-		    args.data[2].ToUnifiedFormat(count, c_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[0], count, v_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[1], count, w_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[2], count, c_data);
 		    auto v_lists = UnifiedVectorFormat::GetData<list_entry_t>(v_data);
 		    auto w_lists = UnifiedVectorFormat::GetData<list_entry_t>(w_data);
 		    auto caps = UnifiedVectorFormat::GetData<double>(c_data);
@@ -165,16 +167,16 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 		    auto &v_child = ListVector::GetEntry(args.data[0]);
 		    auto &w_child = ListVector::GetEntry(args.data[1]);
 		    UnifiedVectorFormat vc, wc;
-		    v_child.ToUnifiedFormat(ListVector::GetListSize(args.data[0]), vc);
-		    w_child.ToUnifiedFormat(ListVector::GetListSize(args.data[1]), wc);
+		    duckdb_compat::ToUnifiedFormat(v_child, ListVector::GetListSize(args.data[0]), vc);
+		    duckdb_compat::ToUnifiedFormat(w_child, ListVector::GetListSize(args.data[1]), wc);
 		    auto v_vals = UnifiedVectorFormat::GetData<double>(vc);
 		    auto w_vals = UnifiedVectorFormat::GetData<double>(wc);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &sel_vec = *entries[0];
-		    auto sel_out = FlatVector::GetData<list_entry_t>(sel_vec);
-		    auto value_out = FlatVector::GetData<double>(*entries[1]);
-		    auto weight_out = FlatVector::GetData<double>(*entries[2]);
+		    auto &sel_vec = duckdb_compat::StructChild(entries[0]);
+		    auto sel_out = duckdb_compat::FlatData<list_entry_t>(sel_vec);
+		    auto value_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
+		    auto weight_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[2]));
 		    idx_t sel_offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -276,14 +278,15 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 			    sel_out[row].offset = sel_offset;
 			    sel_out[row].length = sel.taken.size();
 			    ListVector::Reserve(sel_vec, sel_offset + sel.taken.size());
-			    auto sel_child = FlatVector::GetData<bool>(ListVector::GetEntry(sel_vec));
+			    auto sel_child = duckdb_compat::FlatData<bool>(ListVector::GetEntry(sel_vec));
 			    for (idx_t i = 0; i < sel.taken.size(); i++) {
 				    sel_child[sel_offset + i] = sel.taken[i];
 			    }
 			    sel_offset += sel.taken.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(sel_vec)).SetAllValid(sel_offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(sel_vec)).SetAllValid(sel_offset);
 		    ListVector::SetListSize(sel_vec, sel_offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,

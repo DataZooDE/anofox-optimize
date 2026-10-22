@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -27,9 +29,9 @@ struct ListReader {
 ListReader OpenList(Vector &v, idx_t count) {
 	ListReader r;
 	r.vec = &v;
-	v.ToUnifiedFormat(count, r.outer);
+	duckdb_compat::ToUnifiedFormat(v, count, r.outer);
 	r.lists = UnifiedVectorFormat::GetData<list_entry_t>(r.outer);
-	ListVector::GetEntry(v).ToUnifiedFormat(ListVector::GetListSize(v), r.child);
+	duckdb_compat::ToUnifiedFormat(ListVector::GetEntry(v), ListVector::GetListSize(v), r.child);
 	return r;
 }
 
@@ -51,18 +53,23 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 		auto value_vals = UnifiedVectorFormat::GetData<double>(val_r.child);
 
 		UnifiedVectorFormat n_data, base_data;
-		args.data[3].ToUnifiedFormat(count, n_data);
-		args.data[4].ToUnifiedFormat(count, base_data);
+		duckdb_compat::ToUnifiedFormat(args.data[3], count, n_data);
+		duckdb_compat::ToUnifiedFormat(args.data[4], count, base_data);
 		auto ns = UnifiedVectorFormat::GetData<int64_t>(n_data);
 		auto bases = UnifiedVectorFormat::GetData<int64_t>(base_data);
 
-		auto out = FlatVector::GetData<list_entry_t>(result);
+		auto out = duckdb_compat::FlatData<list_entry_t>(result);
 		idx_t offset = 0;
 
 		for (idx_t row = 0; row < count; row++) {
+			const auto fi = from_r.outer.sel->get_index(row);
+			const auto ti = to_r.outer.sel->get_index(row);
+			const auto vi = val_r.outer.sel->get_index(row);
 			const auto ni = n_data.sel->get_index(row);
 			const auto bi = base_data.sel->get_index(row);
-			if (!n_data.validity.RowIsValid(ni) || !base_data.validity.RowIsValid(bi)) {
+			if (!from_r.outer.validity.RowIsValid(fi) || !to_r.outer.validity.RowIsValid(ti) ||
+			    !val_r.outer.validity.RowIsValid(vi) || !n_data.validity.RowIsValid(ni) ||
+			    !base_data.validity.RowIsValid(bi)) {
 				FlatVector::SetNull(result, row, true);
 				out[row].offset = offset;
 				out[row].length = 0;
@@ -75,9 +82,9 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 			const idx_t n = static_cast<idx_t>(ns[ni]);
 			const int64_t base = bases[bi];
 
-			const auto fe = from_r.lists[from_r.outer.sel->get_index(row)];
-			const auto te = to_r.lists[to_r.outer.sel->get_index(row)];
-			const auto ve = val_r.lists[val_r.outer.sel->get_index(row)];
+			const auto fe = from_r.lists[fi];
+			const auto te = to_r.lists[ti];
+			const auto ve = val_r.lists[vi];
 			if (fe.length != te.length || fe.length != ve.length) {
 				throw InvalidInputException(
 				    "from, to and value must be the same length, got %llu, %llu and %llu — "
@@ -128,14 +135,15 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 			out[row].offset = offset;
 			out[row].length = m.size();
 			ListVector::Reserve(result, offset + m.size());
-			auto child = FlatVector::GetData<double>(ListVector::GetEntry(result));
+			auto child = duckdb_compat::FlatData<double>(ListVector::GetEntry(result));
 			for (idx_t i = 0; i < m.size(); i++) {
 				child[offset + i] = m[i];
 			}
 			offset += m.size();
 		}
-		FlatVector::Validity(ListVector::GetEntry(result)).SetAllValid(offset);
+		duckdb_compat::MutableValidity(ListVector::GetEntry(result)).SetAllValid(offset);
 		ListVector::SetListSize(result, offset);
+		FinishResult(args, result);
 	};
 
 	const string description =
@@ -147,7 +155,7 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 	    "`SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.";
 
 	const auto make = [&](const string &name) {
-		return ScalarFunction(name,
+		return ScalarFunction(duckdb_compat::FunctionName(name),
 		                      {LogicalType::LIST(LogicalType::BIGINT),
 		                       LogicalType::LIST(LogicalType::BIGINT),
 		                       LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT,

@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -117,7 +119,7 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 	                                        {"total_setup", LogicalType::DOUBLE}});
 
 	ScalarFunction function(
-	    name, {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT}, return_type,
+	    duckdb_compat::FunctionName(name), {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT}, return_type,
 	    [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
 #ifdef ANOFOX_TELEMETRY_ENABLED
 		    PostHogTelemetry::Instance().RecordFunctionCall(name);
@@ -126,20 +128,20 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 
 		    UnifiedVectorFormat m_data, n_data;
-		    args.data[0].ToUnifiedFormat(count, m_data);
-		    args.data[1].ToUnifiedFormat(count, n_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[0], count, m_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[1], count, n_data);
 		    auto m_lists = UnifiedVectorFormat::GetData<list_entry_t>(m_data);
 		    auto n_vals = UnifiedVectorFormat::GetData<int64_t>(n_data);
 
 		    auto &m_child = ListVector::GetEntry(args.data[0]);
 		    UnifiedVectorFormat mc;
-		    m_child.ToUnifiedFormat(ListVector::GetListSize(args.data[0]), mc);
+		    duckdb_compat::ToUnifiedFormat(m_child, ListVector::GetListSize(args.data[0]), mc);
 		    auto m_vals = UnifiedVectorFormat::GetData<double>(mc);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &order_vec = *entries[0];
-		    auto order_out = FlatVector::GetData<list_entry_t>(order_vec);
-		    auto setup_out = FlatVector::GetData<double>(*entries[1]);
+		    auto &order_vec = duckdb_compat::StructChild(entries[0]);
+		    auto order_out = duckdb_compat::FlatData<list_entry_t>(order_vec);
+		    auto setup_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
 		    idx_t order_offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -195,14 +197,15 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 			    order_out[row].offset = order_offset;
 			    order_out[row].length = seq.order.size();
 			    ListVector::Reserve(order_vec, order_offset + seq.order.size());
-			    auto order_child = FlatVector::GetData<uint64_t>(ListVector::GetEntry(order_vec));
+			    auto order_child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(order_vec));
 			    for (idx_t i = 0; i < seq.order.size(); i++) {
 				    order_child[order_offset + i] = seq.order[i];
 			    }
 			    order_offset += seq.order.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(order_vec)).SetAllValid(order_offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(order_vec)).SetAllValid(order_offset);
 		    ListVector::SetListSize(order_vec, order_offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,

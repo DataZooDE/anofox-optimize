@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -223,7 +225,7 @@ ANOFOX_ASSORTMENT_BINDING(Recapture, RecapturedMargin)
 
 vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, idx_t expect) {
 	UnifiedVectorFormat data;
-	v.ToUnifiedFormat(count, data);
+	duckdb_compat::ToUnifiedFormat(v, count, data);
 	auto lists = UnifiedVectorFormat::GetData<list_entry_t>(data);
 	const auto li = data.sel->get_index(row);
 	if (!data.validity.RowIsValid(li)) {
@@ -231,7 +233,7 @@ vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, 
 	}
 	auto &child = ListVector::GetEntry(v);
 	UnifiedVectorFormat cd;
-	child.ToUnifiedFormat(ListVector::GetListSize(v), cd);
+	duckdb_compat::ToUnifiedFormat(child, ListVector::GetListSize(v), cd);
 	auto values = UnifiedVectorFormat::GetData<double>(cd);
 	const auto entry = lists[li];
 	if (expect && entry.length != expect) {
@@ -493,7 +495,7 @@ static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
 	                                        {"volatility", LogicalType::DOUBLE},
 	                                        {"sharpe", LogicalType::DOUBLE}});
 	ScalarFunction function(
-	    name,
+	    duckdb_compat::FunctionName(name),
 	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::BIGINT, LogicalType::DOUBLE},
 	    return_type, [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
@@ -503,17 +505,17 @@ static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
 		    const idx_t count = args.size();
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 		    UnifiedVectorFormat k_data, cap_data;
-		    args.data[2].ToUnifiedFormat(count, k_data);
-		    args.data[3].ToUnifiedFormat(count, cap_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[2], count, k_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[3], count, cap_data);
 		    auto ks = UnifiedVectorFormat::GetData<int64_t>(k_data);
 		    auto caps = UnifiedVectorFormat::GetData<double>(cap_data);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &w_vec = *entries[0];
-		    auto w_out = FlatVector::GetData<list_entry_t>(w_vec);
-		    auto ret_out = FlatVector::GetData<double>(*entries[1]);
-		    auto vol_out = FlatVector::GetData<double>(*entries[2]);
-		    auto sharpe_out = FlatVector::GetData<double>(*entries[3]);
+		    auto &w_vec = duckdb_compat::StructChild(entries[0]);
+		    auto w_out = duckdb_compat::FlatData<list_entry_t>(w_vec);
+		    auto ret_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
+		    auto vol_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[2]));
+		    auto sharpe_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[3]));
 		    idx_t offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -555,14 +557,15 @@ static void AddPortfolioFunction(ExtensionLoader &loader, const string &name,
 			    w_out[row].offset = offset;
 			    w_out[row].length = p.weights.size();
 			    ListVector::Reserve(w_vec, offset + p.weights.size());
-			    auto child = FlatVector::GetData<double>(ListVector::GetEntry(w_vec));
+			    auto child = duckdb_compat::FlatData<double>(ListVector::GetEntry(w_vec));
 			    for (idx_t i = 0; i < p.weights.size(); i++) {
 				    child[offset + i] = p.weights[i];
 			    }
 			    offset += p.weights.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(w_vec)).SetAllValid(offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(w_vec)).SetAllValid(offset);
 		    ListVector::SetListSize(w_vec, offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
@@ -586,7 +589,7 @@ static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
 	auto return_type = LogicalType::STRUCT({{"listed", LogicalType::LIST(LogicalType::BOOLEAN)},
 	                                        {"captured_margin", LogicalType::DOUBLE}});
 	ScalarFunction function(
-	    name,
+	    duckdb_compat::FunctionName(name),
 	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::LIST(LogicalType::DOUBLE), LogicalType::BIGINT},
 	    return_type, [fn, name](DataChunk &args, ExpressionState &, Vector &result) {
@@ -596,13 +599,13 @@ static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
 		    const idx_t count = args.size();
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 		    UnifiedVectorFormat k_data;
-		    args.data[3].ToUnifiedFormat(count, k_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[3], count, k_data);
 		    auto ks = UnifiedVectorFormat::GetData<int64_t>(k_data);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &listed_vec = *entries[0];
-		    auto listed_out = FlatVector::GetData<list_entry_t>(listed_vec);
-		    auto margin_out = FlatVector::GetData<double>(*entries[1]);
+		    auto &listed_vec = duckdb_compat::StructChild(entries[0]);
+		    auto listed_out = duckdb_compat::FlatData<list_entry_t>(listed_vec);
+		    auto margin_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
 		    idx_t offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -637,14 +640,15 @@ static void AddAssortmentFunction(ExtensionLoader &loader, const string &name,
 			    listed_out[row].offset = offset;
 			    listed_out[row].length = a.listed.size();
 			    ListVector::Reserve(listed_vec, offset + a.listed.size());
-			    auto child = FlatVector::GetData<bool>(ListVector::GetEntry(listed_vec));
+			    auto child = duckdb_compat::FlatData<bool>(ListVector::GetEntry(listed_vec));
 			    for (idx_t i = 0; i < a.listed.size(); i++) {
 				    child[offset + i] = a.listed[i];
 			    }
 			    offset += a.listed.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(listed_vec)).SetAllValid(offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(listed_vec)).SetAllValid(offset);
 		    ListVector::SetListSize(listed_vec, offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,

@@ -6,6 +6,8 @@
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
 #include "register_alias.hpp"
+#include "duckdb_compat/list_vector.hpp"
+#include "duckdb_compat/struct_vector.hpp"
 
 #ifdef ANOFOX_TELEMETRY_ENABLED
 #include "telemetry.hpp"
@@ -299,7 +301,7 @@ Schedule BestOfSchedule(const Instance &inst) {
 
 vector<double> ReadList(Vector &v, idx_t count, idx_t row, const char *what, idx_t expect) {
 	UnifiedVectorFormat data;
-	v.ToUnifiedFormat(count, data);
+	duckdb_compat::ToUnifiedFormat(v, count, data);
 	auto lists = UnifiedVectorFormat::GetData<list_entry_t>(data);
 	const auto li = data.sel->get_index(row);
 	if (!data.validity.RowIsValid(li)) {
@@ -307,7 +309,7 @@ vector<double> ReadList(Vector &v, idx_t count, idx_t row, const char *what, idx
 	}
 	auto &child = ListVector::GetEntry(v);
 	UnifiedVectorFormat cd;
-	child.ToUnifiedFormat(ListVector::GetListSize(v), cd);
+	duckdb_compat::ToUnifiedFormat(child, ListVector::GetListSize(v), cd);
 	auto values = UnifiedVectorFormat::GetData<double>(cd);
 	const auto entry = lists[li];
 	if (expect && entry.length != expect) {
@@ -345,7 +347,7 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 	                         {"total_weighted_tardiness", LogicalType::DOUBLE},
 	                         {"makespan", LogicalType::DOUBLE}});
 	ScalarFunction function(
-	    name,
+	    duckdb_compat::FunctionName(name),
 	    {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::LIST(LogicalType::DOUBLE), LogicalType::LIST(LogicalType::DOUBLE),
 	     LogicalType::BIGINT},
@@ -356,14 +358,14 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 		    const idx_t count = args.size();
 		    result.SetVectorType(VectorType::FLAT_VECTOR);
 		    UnifiedVectorFormat n_data;
-		    args.data[4].ToUnifiedFormat(count, n_data);
+		    duckdb_compat::ToUnifiedFormat(args.data[4], count, n_data);
 		    auto n_vals = UnifiedVectorFormat::GetData<int64_t>(n_data);
 
 		    auto &entries = StructVector::GetEntries(result);
-		    auto &order_vec = *entries[0];
-		    auto order_out = FlatVector::GetData<list_entry_t>(order_vec);
-		    auto twt_out = FlatVector::GetData<double>(*entries[1]);
-		    auto mk_out = FlatVector::GetData<double>(*entries[2]);
+		    auto &order_vec = duckdb_compat::StructChild(entries[0]);
+		    auto order_out = duckdb_compat::FlatData<list_entry_t>(order_vec);
+		    auto twt_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[1]));
+		    auto mk_out = duckdb_compat::FlatData<double>(duckdb_compat::StructChild(entries[2]));
 		    idx_t offset = 0;
 
 		    for (idx_t row = 0; row < count; row++) {
@@ -403,14 +405,15 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 			    order_out[row].offset = offset;
 			    order_out[row].length = s.order.size();
 			    ListVector::Reserve(order_vec, offset + s.order.size());
-			    auto child = FlatVector::GetData<uint64_t>(ListVector::GetEntry(order_vec));
+			    auto child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(order_vec));
 			    for (idx_t i = 0; i < s.order.size(); i++) {
 				    child[offset + i] = s.order[i];
 			    }
 			    offset += s.order.size();
 		    }
-		    FlatVector::Validity(ListVector::GetEntry(order_vec)).SetAllValid(offset);
+		    duckdb_compat::MutableValidity(ListVector::GetEntry(order_vec)).SetAllValid(offset);
 		    ListVector::SetListSize(order_vec, offset);
+		    FinishResult(args, result);
 	    });
 
 	RegisterScalarOrAlias(loader, std::move(function), description, example, alias_of,
