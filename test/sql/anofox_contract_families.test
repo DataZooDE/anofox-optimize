@@ -1,0 +1,312 @@
+# name: test/sql/anofox_contract_families.test
+# description: long forms and objectives of knapsack, sequence, assortment and portfolio
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+statement ok
+CREATE TABLE ship AS SELECT * FROM (VALUES ('k1', 10.0, 5.0), ('k2', 6.0, 4.0), ('k3', 5.0, 2.0)) t(id, val, kg);
+
+statement ok
+CREATE TABLE stops AS SELECT * FROM (VALUES ('a'), ('b'), ('c')) t(stop);
+
+# Symmetric distances, each pair listed both ways.
+statement ok
+CREATE TABLE dist AS SELECT * FROM (VALUES
+    ('a', 'b', 5.0), ('b', 'a', 5.0), ('a', 'c', 9.0), ('c', 'a', 9.0), ('b', 'c', 3.0), ('c', 'b', 3.0)) t(from_id, to_id, value);
+
+statement ok
+CREATE TABLE prods AS SELECT * FROM (VALUES (1, 5.0, 100.0), (2, 4.0, 90.0), (3, 3.0, 50.0)) t(sku, margin, demand);
+
+# Fraction of from_id's demand that moves to to_id.
+statement ok
+CREATE TABLE subst AS SELECT * FROM (VALUES
+    (1, 2, 0.6), (1, 3, 0.1), (2, 1, 0.6), (2, 3, 0.1), (3, 1, 0.2), (3, 2, 0.2)) t(from_id, to_id, value);
+
+statement ok
+CREATE TABLE assets AS SELECT * FROM (VALUES ('x', 0.12), ('y', 0.10), ('z', 0.10)) t(ticker, ret);
+
+# The covariance, each pair once (the macro mirrors it).
+statement ok
+CREATE TABLE cov AS SELECT * FROM (VALUES
+    ('x', 'x', 0.04), ('y', 'y', 0.04), ('z', 'z', 0.04), ('x', 'y', 0.036), ('x', 'z', -0.01), ('y', 'z', -0.01))
+    t(from_id, to_id, value);
+
+# Bigger instances: two groups each, so the members disagree.
+statement ok
+CREATE TABLE many AS
+SELECT 'g' || (i % 2) AS "my group", i AS item, (3 + (i * 7) % 11)::DOUBLE AS v, (2 + (i * 5) % 6)::DOUBLE AS w,
+       (2 + (i * 3) % 5)::DOUBLE AS margin, (60 + 15 * ((i * 2) % 5))::DOUBLE AS demand,
+       0.04 + 0.01 * (i % 5) AS ret
+FROM range(0, 16) t(i);
+
+statement ok
+CREATE TABLE many_pairs AS
+SELECT a AS from_id, b AS to_id, round(abs(sin(a * 3 + b)) * 10, 3) AS value,
+       CASE WHEN a // 2 = b // 2 THEN 0.4 ELSE 0.03 END AS frac,
+       CASE WHEN a = b THEN 0.02 + 0.005 * (a % 4) ELSE 0.003 END AS c
+FROM range(0, 16) x(a), range(0, 16) y(b);
+
+# ── columns ──────────────────────────────────────────────────────────────────
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_knapsack_by('ship', 'id', 'val', 'kg', 6.0));
+----
+model_id	VARCHAR
+item	VARCHAR
+value	DOUBLE
+weight	DOUBLE
+selected	BOOLEAN
+capacity	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_sequence_by('stops', 'stop', 'dist', group_col := 'stop'));
+----
+stop	VARCHAR
+model_id	VARCHAR
+position	BIGINT
+item	VARCHAR
+setup	DOUBLE
+cumulative_setup	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_assortment_by('prods', 'sku', 'margin', 'demand', 'subst', 2));
+----
+model_id	VARCHAR
+item	INTEGER
+margin	DOUBLE
+demand	DOUBLE
+listed	BOOLEAN
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_assortment_recapture_by('prods', 'sku', 'margin', 'demand', 'subst', 2));
+----
+model_id	VARCHAR
+item	INTEGER
+margin	DOUBLE
+demand	DOUBLE
+listed	BOOLEAN
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_portfolio_by('assets', 'ticker', 'ret', 'cov', 2, 0.6));
+----
+model_id	VARCHAR
+item	VARCHAR
+expected_return	DOUBLE
+weight	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_portfolio_objectives_by('assets', 'ticker', 'ret', 'cov', 2, 0.6));
+----
+model_id	VARCHAR
+metric	VARCHAR
+value	DOUBLE
+conf_low	DOUBLE
+conf_high	DOUBLE
+
+# ── knapsack ─────────────────────────────────────────────────────────────────
+
+# Capacity 6: k2 + k3 (value 11) is optimal; taking the most valuable first (k1) leaves no room.
+query TTRRT
+SELECT model_id, item, value, weight, selected
+FROM opt_knapsack_by('ship', 'id', 'val', 'kg', 6.0, algorithms := ['exact', 'greedy_value'])
+ORDER BY model_id, item;
+----
+exact	k1	10.0	5.0	false
+exact	k2	6.0	4.0	true
+exact	k3	5.0	2.0	true
+greedy_value	k1	10.0	5.0	true
+greedy_value	k2	6.0	4.0	false
+greedy_value	k3	5.0	2.0	false
+
+query TTR
+SELECT model_id, metric, value FROM opt_knapsack_objectives_by('ship', 'id', 'val', 'kg', 6.0, algorithms := ['exact'])
+ORDER BY metric;
+----
+exact	items_selected	2.0
+exact	total_value	11.0
+exact	total_weight	6.0
+
+# Every member: the selection adds up to the solver's totals and fits.
+query I
+WITH l AS (FROM opt_knapsack_by('many', 'item', 'v', 'w', 20.0, group_col := 'my group',
+                                algorithms := ['best_of', 'exact', 'greedy_ratio', 'greedy_value'])),
+     o AS (PIVOT (FROM opt_knapsack_objectives_by('many', 'item', 'v', 'w', 20.0, group_col := 'my group',
+                                                  algorithms := ['best_of', 'exact', 'greedy_ratio', 'greedy_value']))
+           ON metric USING any_value(value) GROUP BY "my group", model_id),
+     per AS (SELECT "my group", model_id, sum(value) FILTER (selected) AS tv, coalesce(sum(weight) FILTER (selected), 0) AS tw,
+                    count(*) FILTER (selected) AS n FROM l GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my group", model_id)
+WHERE abs(tv - o.total_value) > 1e-9 OR abs(tw - o.total_weight) > 1e-9 OR tw > 20 OR n <> o.items_selected;
+----
+0
+
+query I
+SELECT count(DISTINCT total_value) > 1 FROM (PIVOT (FROM opt_knapsack_objectives_by('many', 'item', 'v', 'w', 20.0,
+    group_col := 'my group', algorithms := ['exact', 'greedy_value'])) ON metric USING any_value(value) GROUP BY "my group", model_id);
+----
+true
+
+# ── sequence ─────────────────────────────────────────────────────────────────
+
+query TITRR
+SELECT model_id, position, item, setup, cumulative_setup
+FROM opt_sequence_by('stops', 'stop', 'dist', algorithms := ['as_given']) ORDER BY position;
+----
+as_given	1	a	0.0	0.0
+as_given	2	b	5.0	5.0
+as_given	3	c	3.0	8.0
+
+# The pairs table is the scalar solver's matrix: same order, same total.
+query I
+WITH m AS (SELECT opt_matrix_from_triples(list(from_id), list(to_id), list(value), 16, 0) AS setup FROM many_pairs),
+     s AS (SELECT opt_sequence_two_opt((FROM m), 16) AS r)
+SELECT (SELECT list(item ORDER BY position) FROM opt_sequence_by('many', 'item',
+            '(SELECT from_id, to_id, value FROM many_pairs)', algorithms := ['two_opt']))
+       = (SELECT list(o) FROM (SELECT unnest(r."order")::BIGINT AS o FROM s));
+----
+true
+
+query I
+WITH l AS (FROM opt_sequence_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)', group_col := 'my group',
+                                algorithms := ['as_given', 'best_of', 'nearest_neighbour', 'two_opt'])),
+     o AS (FROM opt_sequence_objectives_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)',
+                                           group_col := 'my group',
+                                           algorithms := ['as_given', 'best_of', 'nearest_neighbour', 'two_opt'])),
+     per AS (SELECT "my group", model_id, sum(setup) AS total, max(cumulative_setup) AS last, count(*) AS n FROM l GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my group", model_id)
+WHERE o.metric = 'total_setup' AND (abs(total - o.value) > 1e-9 OR abs(last - o.value) > 1e-9 OR n <> 8);
+----
+0
+
+# ── assortment ───────────────────────────────────────────────────────────────
+
+# Listing 1 and 3: 1 keeps 90 of its 100 (0.1 moves to 3), 3 keeps 40 of its 50 (0.2 moves to 1):
+# 5 · 90 + 3 · 40 = 570.
+query TITR
+SELECT model_id, item, listed, (SELECT value FROM opt_assortment_objectives_by('prods', 'sku', 'margin', 'demand', 'subst', 2)
+                                WHERE metric = 'captured_margin')
+FROM opt_assortment_by('prods', 'sku', 'margin', 'demand', 'subst', 2) ORDER BY item;
+----
+best_of	1	true	570.0
+best_of	2	false	570.0
+best_of	3	true	570.0
+
+query I
+WITH m AS (SELECT opt_matrix_from_triples(list(from_id), list(to_id), list(frac), 16, 0) AS s FROM many_pairs WHERE from_id <> to_id),
+     r AS (SELECT opt_assortment_recapture_local_search((SELECT list(margin ORDER BY item) FROM many),
+                                                        (SELECT list(demand ORDER BY item) FROM many), (FROM m), 5) AS r)
+SELECT (SELECT list(listed ORDER BY item) FROM opt_assortment_recapture_by('many', 'item', 'margin', 'demand',
+            '(SELECT from_id, to_id, frac AS value FROM many_pairs WHERE from_id <> to_id)', 5,
+            algorithms := ['local_search'])) = (SELECT r.listed FROM r);
+----
+true
+
+query I
+WITH l AS (FROM opt_assortment_by('many', 'item', 'margin', 'demand',
+                                  '(SELECT from_id, to_id, frac AS value FROM many_pairs WHERE from_id <> to_id)', 3,
+                                  group_col := 'my group',
+                                  algorithms := ['best_of', 'greedy_marginal', 'local_search', 'top_margin'])),
+     o AS (PIVOT (FROM opt_assortment_objectives_by('many', 'item', 'margin', 'demand',
+                                  '(SELECT from_id, to_id, frac AS value FROM many_pairs WHERE from_id <> to_id)', 3,
+                                  group_col := 'my group',
+                                  algorithms := ['best_of', 'greedy_marginal', 'local_search', 'top_margin']))
+           ON metric USING any_value(value) GROUP BY "my group", model_id),
+     per AS (SELECT "my group", model_id, count(*) FILTER (listed) AS n FROM l GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my group", model_id) WHERE n <> o.items_listed OR n > 3 OR n < 1;
+----
+0
+
+# ── portfolio ────────────────────────────────────────────────────────────────
+
+# The covariance listed once per pair is mirrored: the same answer as the scalar solver on the full matrix.
+query I
+SELECT (SELECT list(weight ORDER BY item) FROM opt_portfolio_by('assets', 'ticker', 'ret', 'cov', 2, 0.6))
+     = opt_portfolio_best_of([0.12, 0.10, 0.10], [0.04, 0.036, -0.01, 0.036, 0.04, -0.01, -0.01, -0.01, 0.04], 2, 0.6).weights;
+----
+true
+
+query TR
+SELECT metric, round(value, 6) FROM opt_portfolio_objectives_by('assets', 'ticker', 'ret', 'cov', 2, 0.6) ORDER BY metric;
+----
+expected_return	0.110545
+holdings	2.0
+sharpe	0.90037
+volatility	0.122778
+
+query I
+WITH l AS (FROM opt_portfolio_by('many', 'item', 'ret', '(SELECT from_id, to_id, c AS value FROM many_pairs)', 4, 0.4,
+                                 group_col := 'my group',
+                                 algorithms := ['best_of', 'greedy_sharpe', 'top_return', 'top_return_optimized'])),
+     o AS (PIVOT (FROM opt_portfolio_objectives_by('many', 'item', 'ret', '(SELECT from_id, to_id, c AS value FROM many_pairs)',
+                                 4, 0.4, group_col := 'my group',
+                                 algorithms := ['best_of', 'greedy_sharpe', 'top_return', 'top_return_optimized']))
+           ON metric USING any_value(value) GROUP BY "my group", model_id),
+     per AS (SELECT "my group", model_id, sum(weight) AS total, sum(weight * expected_return) AS er,
+                    count(*) FILTER (weight > 1e-9) AS n, max(weight) AS top FROM l GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my group", model_id)
+WHERE abs(total - 1) > 1e-6 OR abs(er - o.expected_return) > 1e-9 OR n <> o.holdings OR n > 4 OR top > 0.4 + 1e-9;
+----
+0
+
+# ── errors ───────────────────────────────────────────────────────────────────
+
+statement error
+SELECT * FROM opt_portfolio_by('assets', 'ticker', 'ret', '(SELECT * FROM cov UNION ALL SELECT ''y'', ''x'', 0.5)', 2, 0.6);
+----
+<REGEX>:.*opt_portfolio_by: the covariance of 'x' and 'y' is given twice with different values.*
+
+statement error
+SELECT * FROM opt_sequence_by('stops', 'stop', '(SELECT * FROM dist UNION ALL SELECT ''a'', ''b'', 1.0)');
+----
+<REGEX>:.*opt_sequence_by: the pair from 'a' to 'b' appears more than once in setup_data.*
+
+statement error
+SELECT * FROM opt_knapsack_by('(SELECT * FROM ship UNION ALL SELECT * FROM ship)', 'id', 'val', 'kg', 6.0);
+----
+<REGEX>:.*opt_knapsack_by: item 'k1' appears more than once.*
+
+statement error
+SELECT * FROM opt_assortment_by('prods', 'sku', 'margin', 'demand', 'subst', 2, algorithms := ['greedy']);
+----
+<REGEX>:.*opt_assortment_by: unknown algorithm 'greedy'.*best_of, greedy_marginal, local_search, top_margin.*
+
+# The sequence has no virtual start: a NULL from_id is an error, not a silently dropped row.
+statement error
+SELECT * FROM opt_sequence_by('stops', 'stop', '(SELECT NULL AS from_id, ''a'' AS to_id, 1.0 AS value)');
+----
+<REGEX>:.*opt_sequence_by: setup_data has a NULL from_id.*
+
+# ── discovery ────────────────────────────────────────────────────────────────
+
+# The objectives are summary producers; the long forms have no contract schema yet and carry only the family tag.
+query TT
+SELECT function_name, tags['anofox.output'] FROM duckdb_functions()
+WHERE tags['anofox.contract'] = '1' AND function_name LIKE 'opt\_%' ESCAPE '\' ORDER BY 1;
+----
+opt_assortment_objectives_by	summary
+opt_assortment_recapture_objectives_by	summary
+opt_knapsack_objectives_by	summary
+opt_pack_by	assignment
+opt_pack_objectives_by	summary
+opt_portfolio_objectives_by	summary
+opt_schedule_by	schedule
+opt_schedule_objectives_by	summary
+opt_sequence_objectives_by	summary
+opt_wave_by	assignment
+opt_wave_objectives_by	summary
+
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE function_name IN ('opt_knapsack_by', 'opt_sequence_by', 'opt_assortment_by', 'opt_assortment_recapture_by',
+                        'opt_portfolio_by', 'anofox_optimize_knapsack_by', 'anofox_optimize_sequence_by',
+                        'anofox_optimize_assortment_by', 'anofox_optimize_assortment_recapture_by',
+                        'anofox_optimize_portfolio_by')
+  AND tags['anofox.family'] = 'optimize' AND tags['anofox.contract'] IS NULL;
+----
+10
+
+query I
+SELECT count(*) FROM duckdb_functions() WHERE tags['anofox.contract'] = '1';
+----
+22

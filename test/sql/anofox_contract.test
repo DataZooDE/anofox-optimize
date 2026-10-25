@@ -320,7 +320,7 @@ SELECT anofox_contract_version();
 
 query TT
 SELECT function_name, tags['anofox.output'] FROM duckdb_functions()
-WHERE tags['anofox.contract'] = '1' ORDER BY 1;
+WHERE tags['anofox.contract'] = '1' AND regexp_matches(function_name, '_(pack|wave|schedule)_') ORDER BY 1;
 ----
 anofox_optimize_pack_by	assignment
 anofox_optimize_pack_objectives_by	summary
