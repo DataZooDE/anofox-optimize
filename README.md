@@ -84,6 +84,41 @@ Both are silent, so they are worth reading before you start:
 
 See [Choosing a Family](docs/guides/02-choosing-a-family.md).
 
+## Plot the decisions
+
+`pack_by`, `wave_by` and `schedule_by` run the solvers over your rows and return
+one row per item or job, in the long tables
+[anofox-visualization](https://github.com/DataZooDE/anofox-visualization) plots
+with no reshaping. Pass several algorithms to compare them: each one becomes a
+`model_id`.
+
+```sql
+LOAD anofox_optimize; LOAD anofox_visualization;
+
+-- Containers filled carton by carton, next fit against bin completion.
+SELECT anofox_plot(t) FROM opt_pack_by('cartons', 'carton', 'size', 10.0,
+    algorithms := ['next_fit', 'bin_completion']) t;
+
+-- A Gantt chart per algorithm; late jobs in red. Setups come from a
+-- (from_id, to_id, value) table, from_id NULL being the first job's.
+SELECT anofox_plot(t) FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority',
+    setup_data := 'changeovers', algorithms := ['edd', 'best_of']) t;
+
+-- The objectives side by side (bins_used; late_jobs, makespan, total_weighted_tardiness).
+SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 'due', 'priority',
+    setup_data := 'changeovers', algorithms := ['edd', 'wspt', 'best_of']) t;
+```
+
+- **Bins and waves start at 1** in the long form, unlike the scalar `pack_*`, whose
+  bins start at 0.
+- **`group_col` splits the rows into instances**, e.g. one packing per warehouse.
+  In a schedule each group is a machine: one lane of the Gantt chart. The assignment
+  plot does not separate groups, so plot packings and waves one group at a time
+  (`WHERE site = 'w1'`).
+- The tables follow the anofox integration contract (`assignment`, `schedule` and
+  `summary`), and `duckdb_functions()` tags the producers.
+- Plan and details: [docs/ANOFOX_CONTRACT_PLAN.md](docs/ANOFOX_CONTRACT_PLAN.md).
+
 ## Documentation
 
 **Guides** — how to use it:

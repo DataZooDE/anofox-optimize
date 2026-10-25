@@ -25,8 +25,11 @@ DUCKDB="${DUCKDB:-$ROOT/build/release/duckdb}"
   "$DUCKDB" -noheader -list -c "
     LOAD '$EXT';
     SELECT '## ' || function_name || chr(10) || chr(10) ||
-           '\`' || function_name || '(' || COALESCE(parameter_types::VARCHAR,'') || ')\` -> \`'
-                || COALESCE(return_type,'') || '\`' || chr(10) || chr(10) ||
+           CASE WHEN function_type = 'table_macro'
+                -- A table macro's parameters are untyped: show their names, and the rows it returns.
+                THEN '\`' || function_name || '(' || array_to_string(parameters, ', ') || ')\` -> table'
+                ELSE '\`' || function_name || '(' || COALESCE(parameter_types::VARCHAR,'') || ')\` -> \`'
+                     || COALESCE(return_type,'') || '\`' END || chr(10) || chr(10) ||
            COALESCE(description,'_No description._') || chr(10) ||
            CASE WHEN examples IS NOT NULL AND examples::VARCHAR <> '[]'
                 THEN chr(10) || 'Example: \`' || examples[1] || '\`' || chr(10) ELSE '' END

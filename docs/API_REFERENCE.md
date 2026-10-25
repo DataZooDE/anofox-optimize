@@ -136,6 +136,14 @@ Packs items by BOUNDED BIN COMPLETION: seeds each bin with the largest unplaced 
 
 Example: `anofox_optimize_pack_bin_completion([4.0, 8.0, 1.0], 10.0)`
 
+## anofox_optimize_pack_by
+
+`anofox_optimize_pack_by(data, item_col, size_col, capacity, group_col, algorithms)` -> table
+
+Table macro: bin packing as one row per item (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), bin (1-based), item, size, capacity. Each group of data is one instance, packed by every pack_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names.
+
+Example: `SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithms := ['first_fit_decreasing', 'bin_completion']);`
+
 ## anofox_optimize_pack_first_fit_decreasing
 
 `anofox_optimize_pack_first_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
@@ -159,6 +167,14 @@ Example: `anofox_optimize_pack_local_search([4.0, 8.0, 1.0], 10.0)`
 Packs items into bins by next-fit, in the given order, only ever using the most recently opened bin. The weakest member of the family and the cheapest; included so a search has a poor-but-valid baseline to move away from.
 
 Example: `anofox_optimize_pack_next_fit([4.0, 8.0, 1.0], 10.0)`
+
+## anofox_optimize_pack_objectives_by
+
+`anofox_optimize_pack_objectives_by(data, item_col, size_col, capacity, group_col, algorithms)` -> table
+
+Table macro: the objective of bin packing per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (bins_used), value, conf_low, conf_high. Same arguments as pack_by.
+
+Example: `SELECT * FROM opt_pack_objectives_by('cartons', 'carton', 'size', 10.0, group_col := 'site');`
 
 ## anofox_optimize_pack_worst_fit_decreasing
 
@@ -216,6 +232,14 @@ Runs every scheduling algorithm in this family and returns whichever had the low
 
 Example: `anofox_optimize_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
+## anofox_optimize_schedule_by
+
+`anofox_optimize_schedule_by(data, job_col, processing_col, due_col, priority_col, setup_data, group_col, algorithms)` -> table
+
+Table macro: single-machine scheduling as one row per job, a Gantt chart (the anofox integration contract's `schedule` schema, for anofox_plot): the group column, model_id (the algorithm), resource (the group, else 'machine'), task (the job), position, start, end, setup, processing, due, priority, tardiness, status ('on time' / 'late'). A job's setup runs before it, so the last end is the makespan. Each group of data is one machine, scheduled by every schedule_* algorithm in algorithms (default ['best_of']). setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value (from_id NULL: before the first job); a missing pair costs 0. Job ids must be unique per group.
+
+Example: `SELECT * FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority', setup_data := 'changeovers', algorithms := ['edd', 'best_of']);`
+
 ## anofox_optimize_schedule_edd
 
 `anofox_optimize_schedule_edd(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
@@ -239,6 +263,14 @@ Example: `anofox_optimize_schedule_exact([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5
 Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_local_search([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
+
+## anofox_optimize_schedule_objectives_by
+
+`anofox_optimize_schedule_objectives_by(data, job_col, processing_col, due_col, priority_col, setup_data, group_col, algorithms)` -> table
+
+Table macro: the objectives of single-machine scheduling per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (late_jobs, makespan, total_weighted_tardiness), value, conf_low, conf_high. Same arguments as schedule_by.
+
+Example: `SELECT * FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 'due', 'priority', setup_data := 'changeovers');`
 
 ## anofox_optimize_schedule_wspt
 
@@ -304,6 +336,14 @@ Runs every batching algorithm in this family and returns whichever had the lowes
 
 Example: `anofox_optimize_wave_best_of([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
+## anofox_optimize_wave_by
+
+`anofox_optimize_wave_by(data, item_col, size_col, priority_col, capacity, group_col, algorithms)` -> table
+
+Table macro: pick-wave batching as one row per order (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), wave (1-based), item, size, capacity, priority. Each group of data is one instance, batched by every wave_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names.
+
+Example: `SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'priority', 40.0);`
+
 ## anofox_optimize_wave_fewest_waves
 
 `anofox_optimize_wave_fewest_waves(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
@@ -311,6 +351,14 @@ Example: `anofox_optimize_wave_best_of([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 Batches largest orders first, minimising the NUMBER of waves rather than the weighted mean wave. Kept deliberately: it optimizes the wrong quantity for this objective, and shows what that costs. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 
 Example: `anofox_optimize_wave_fewest_waves([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
+
+## anofox_optimize_wave_objectives_by
+
+`anofox_optimize_wave_objectives_by(data, item_col, size_col, priority_col, capacity, group_col, algorithms)` -> table
+
+Table macro: the objectives of pick-wave batching per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (avg_weighted_wave, waves_used), value, conf_low, conf_high. Same arguments as wave_by.
+
+Example: `SELECT * FROM opt_wave_objectives_by('orders', 'order_id', 'lines', 'priority', 40.0, algorithms := ['as_given', 'best_of']);`
 
 ## anofox_optimize_wave_priority_density
 

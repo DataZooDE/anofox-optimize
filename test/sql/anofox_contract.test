@@ -1,0 +1,367 @@
+# name: test/sql/anofox_contract.test
+# description: the anofox integration contract — assignment / schedule / summary producers and their tags
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+statement ok
+CREATE TABLE cartons AS SELECT * FROM (VALUES
+    ('w1', 1, 4.0), ('w1', 2, 8.0), ('w1', 3, 1.0),
+    ('w2', 1, 6.0), ('w2', 2, 6.0)) t(site, carton, size);
+
+statement ok
+CREATE TABLE orders AS SELECT * FROM (VALUES
+    ('o1', 3.0, 1.0), ('o2', 4.0, 5.0), ('o3', 5.0, 1.0)) t(order_id, lines, prio);
+
+statement ok
+CREATE TABLE jobs AS SELECT * FROM (VALUES
+    ('a', 10.0, 20.0, 1.0), ('b', 10.0, 5.0, 3.0)) t(job, p, due, w);
+
+statement ok
+CREATE TABLE setups AS SELECT * FROM (VALUES
+    (NULL, 'a', 5.0), (NULL, 'b', 5.0), ('a', 'b', 2.0), ('b', 'a', 2.0)) t(from_id, to_id, value);
+
+# A bigger instance, so the members disagree: 12 cartons, 2 sites.
+statement ok
+CREATE TABLE many AS
+SELECT 'site ' || (i % 2) AS "my site", i AS item, (2 + (i * 5) % 7)::DOUBLE AS size,
+       (1 + (i * 3) % 4)::DOUBLE AS priority
+FROM range(1, 25) t(i);
+
+# 6 jobs with sequence-dependent setups.
+statement ok
+CREATE TABLE line AS
+SELECT i AS job, (4 + (i * 3) % 5)::DOUBLE AS p, (8 + 6 * i)::DOUBLE AS due, (1 + i % 3)::DOUBLE AS w
+FROM range(0, 6) t(i);
+
+statement ok
+CREATE TABLE line_setups AS
+SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_id, b - 1 AS to_id,
+       CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS value
+FROM range(0, 7) x(a), range(1, 7) y(b) WHERE a <> b;
+
+# ── columns ──────────────────────────────────────────────────────────────────
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0));
+----
+model_id	VARCHAR
+bin	BIGINT
+item	INTEGER
+size	DOUBLE
+capacity	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, group_col := 'site'));
+----
+site	VARCHAR
+model_id	VARCHAR
+bin	BIGINT
+item	INTEGER
+size	DOUBLE
+capacity	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'prio', 7.0));
+----
+model_id	VARCHAR
+wave	BIGINT
+item	VARCHAR
+size	DOUBLE
+capacity	DOUBLE
+priority	DOUBLE
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w', setup_data := 'setups'));
+----
+model_id	VARCHAR
+resource	VARCHAR
+task	VARCHAR
+position	BIGINT
+start	DOUBLE
+end	DOUBLE
+setup	DOUBLE
+processing	DOUBLE
+due	DOUBLE
+priority	DOUBLE
+tardiness	DOUBLE
+status	VARCHAR
+
+query TT
+SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_schedule_objectives_by('jobs', 'job', 'p', 'due', 'w', group_col := 'job'));
+----
+job	VARCHAR
+model_id	VARCHAR
+metric	VARCHAR
+value	DOUBLE
+conf_low	DOUBLE
+conf_high	DOUBLE
+
+# ── pack_by: hand-checked placements ─────────────────────────────────────────
+
+# First-fit decreasing, capacity 10: 8 opens bin 1, 4 opens bin 2, 1 joins bin 1 (9).
+# Next fit, in item order: 4 in bin 1, 8 opens bin 2, 1 joins bin 2.
+query TTIIRR
+SELECT site, model_id, bin, item, size, capacity
+FROM opt_pack_by('cartons', 'carton', 'size', 10.0, group_col := 'site',
+                 algorithms := ['first_fit_decreasing', 'next_fit'])
+ORDER BY site, model_id, item;
+----
+w1	first_fit_decreasing	2	1	4.0	10.0
+w1	first_fit_decreasing	1	2	8.0	10.0
+w1	first_fit_decreasing	1	3	1.0	10.0
+w1	next_fit	1	1	4.0	10.0
+w1	next_fit	2	2	8.0	10.0
+w1	next_fit	2	3	1.0	10.0
+w2	first_fit_decreasing	1	1	6.0	10.0
+w2	first_fit_decreasing	2	2	6.0	10.0
+w2	next_fit	1	1	6.0	10.0
+w2	next_fit	2	2	6.0	10.0
+
+# The default is best_of.
+query T
+SELECT DISTINCT model_id FROM opt_pack_by('cartons', 'carton', 'size', 10.0);
+----
+best_of
+
+# Without a group every row is one instance: 4, 8, 1, 6, 6 (25) in 3 bins.
+query TR
+SELECT metric, value FROM opt_pack_objectives_by('(SELECT carton || site AS id, size FROM cartons)', 'id', 'size', 10.0);
+----
+bins_used	3.0
+
+# The long form is the scalar solver's answer, bin + 1 and item by item.
+query I
+WITH s AS (SELECT site, list(carton ORDER BY carton) AS items,
+                  opt_pack_first_fit_decreasing(list(size::DOUBLE ORDER BY carton), 10.0) AS r
+           FROM cartons GROUP BY site),
+     want AS (SELECT site, unnest(items) AS item, unnest(r.assignment) + 1 AS bin FROM s)
+SELECT count(*) FROM want
+FULL JOIN (FROM opt_pack_by('cartons', 'carton', 'size', 10.0, group_col := 'site',
+                            algorithms := ['first_fit_decreasing'])) got
+  ON want.site = got.site AND want.item = got.item AND want.bin = got.bin
+WHERE want.site IS NULL OR got.site IS NULL;
+----
+0
+
+# Every member, every group: bins numbered 1..bins_used, none over capacity,
+# bins_used the solver's own number.
+query I
+WITH l AS (FROM opt_pack_by('many', 'item', 'size', 10.0, group_col := 'my site',
+                            algorithms := ['best_fit_decreasing', 'best_of', 'bin_completion', 'first_fit_decreasing',
+                                           'local_search', 'next_fit', 'worst_fit_decreasing'])),
+     o AS (FROM opt_pack_objectives_by('many', 'item', 'size', 10.0, group_col := 'my site',
+                                       algorithms := ['best_fit_decreasing', 'best_of', 'bin_completion',
+                                                      'first_fit_decreasing', 'local_search', 'next_fit',
+                                                      'worst_fit_decreasing'])),
+     per AS (SELECT "my site", model_id, max(bin) AS top, count(DISTINCT bin) AS nb, min(bin) AS low,
+                    max(load) AS peak, sum(n) AS items
+             FROM (SELECT "my site", model_id, bin, sum(size) AS load, count(*) AS n FROM l GROUP BY ALL)
+             GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my site", model_id)
+WHERE o.metric = 'bins_used' AND (top <> o.value OR nb <> top OR low <> 1 OR peak > 10 OR items <> 12);
+----
+0
+
+query I
+SELECT count(DISTINCT model_id) FROM opt_pack_by('many', 'item', 'size', 10.0, group_col := 'my site',
+    algorithms := ['best_fit_decreasing', 'best_of', 'bin_completion', 'first_fit_decreasing',
+                   'local_search', 'next_fit', 'worst_fit_decreasing']);
+----
+7
+
+# data as a subquery string; the anofox_optimize_ name is the same macro.
+query I
+SELECT count(*) FROM anofox_optimize_pack_by('(SELECT * FROM cartons WHERE site = ''w2'')', 'carton', 'size', 10.0);
+----
+2
+
+# ── wave_by ──────────────────────────────────────────────────────────────────
+
+# Waves keep the solver's 1-based numbers, and the objectives are its own.
+query I
+WITH s AS (SELECT list(order_id ORDER BY order_id) AS items,
+                  opt_wave_best_of(list(lines::DOUBLE ORDER BY order_id), list(prio::DOUBLE ORDER BY order_id), 7.0) AS r
+           FROM orders),
+     want AS (SELECT unnest(items) AS item, unnest(r.wave) AS wave FROM s)
+SELECT count(*) FROM want FULL JOIN (FROM opt_wave_by('orders', 'order_id', 'lines', 'prio', 7.0)) got USING (item, wave)
+WHERE want.item IS NULL OR got.item IS NULL;
+----
+0
+
+query I
+WITH l AS (FROM opt_wave_by('many', 'item', 'size', 'priority', 10.0, group_col := 'my site',
+                            algorithms := ['as_given', 'best_of', 'fewest_waves', 'priority_density', 'priority_first'])),
+     o AS (PIVOT (FROM opt_wave_objectives_by('many', 'item', 'size', 'priority', 10.0, group_col := 'my site',
+                                              algorithms := ['as_given', 'best_of', 'fewest_waves', 'priority_density',
+                                                             'priority_first']))
+           ON metric USING any_value(value) GROUP BY "my site", model_id),
+     per AS (SELECT "my site", model_id, max(wave) AS top, max(load) AS peak,
+                    sum(wave * pr) / sum(pr) AS avg_w
+             FROM (SELECT "my site", model_id, wave, sum(size) OVER (PARTITION BY "my site", model_id, wave) AS load,
+                          priority AS pr FROM l)
+             GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my site", model_id)
+WHERE top <> o.waves_used OR peak > 10 OR abs(avg_w - o.avg_weighted_wave) > 1e-9;
+----
+0
+
+# ── schedule_by: a hand-checked schedule ─────────────────────────────────────
+
+# Job b (due 5, priority 3) first: setup 5, runs 5..15, 10 late. Then a: setup 2,
+# runs 17..27, 7 late. Weighted tardiness 3·10 + 1·7 = 37, makespan 27.
+query TTIRRRRRRRT
+SELECT model_id, task, position, start, "end", setup, processing, due, priority, tardiness, status
+FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w', setup_data := 'setups', algorithms := ['exact', 'edd'])
+ORDER BY model_id, position;
+----
+edd	b	1	5.0	15.0	5.0	10.0	5.0	3.0	10.0	late
+edd	a	2	17.0	27.0	2.0	10.0	20.0	1.0	7.0	late
+exact	b	1	5.0	15.0	5.0	10.0	5.0	3.0	10.0	late
+exact	a	2	17.0	27.0	2.0	10.0	20.0	1.0	7.0	late
+
+query TTR
+SELECT model_id, metric, value
+FROM opt_schedule_objectives_by('jobs', 'job', 'p', 'due', 'w', setup_data := 'setups', algorithms := ['exact'])
+ORDER BY metric;
+----
+exact	late_jobs	2.0
+exact	makespan	27.0
+exact	total_weighted_tardiness	37.0
+
+# Without setups every setup is 0; the single machine is the resource.
+query TIRRT
+SELECT resource, position, start, "end", status FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w', algorithms := ['exact'])
+ORDER BY position;
+----
+machine	1	0.0	10.0	late
+machine	2	10.0	20.0	on time
+
+# With a group, the group is the machine.
+query TT
+SELECT DISTINCT job, resource FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w', group_col := 'job') ORDER BY 1;
+----
+a	a
+b	b
+
+# Every member: the Gantt reproduces the solver's makespan and weighted tardiness,
+# and its order is the solver's order.
+query I
+WITH algos AS (SELECT ['atcs', 'best_of', 'edd', 'exact', 'local_search', 'wspt'] AS a),
+     l AS (FROM opt_schedule_by('line', 'job', 'p', 'due', 'w', setup_data := 'line_setups',
+                                algorithms := ['atcs', 'best_of', 'edd', 'exact', 'local_search', 'wspt'])),
+     o AS (PIVOT (FROM opt_schedule_objectives_by('line', 'job', 'p', 'due', 'w', setup_data := 'line_setups',
+                                                  algorithms := ['atcs', 'best_of', 'edd', 'exact', 'local_search',
+                                                                 'wspt']))
+           ON metric USING any_value(value) GROUP BY model_id),
+     per AS (SELECT model_id, max("end") AS mk, sum(priority * tardiness) AS twt, count(*) FILTER (status = 'late') AS late,
+                    bool_and(start >= 0 AND "end" = start + processing) AS ok
+             FROM l GROUP BY model_id)
+SELECT count(*) FROM per JOIN o USING (model_id)
+WHERE abs(mk - o.makespan) > 1e-9 OR abs(twt - o.total_weighted_tardiness) > 1e-9 OR late <> o.late_jobs OR NOT ok;
+----
+0
+
+query T
+WITH m AS (SELECT opt_matrix_from_triples(list(coalesce(from_id + 1, 0)), list(to_id + 1), list(value), 7, 0) AS setup
+           FROM line_setups),
+     s AS (SELECT opt_schedule_atcs(list(p ORDER BY job), list(due ORDER BY job), list(w ORDER BY job), (FROM m), 6) AS r
+           FROM line)
+SELECT (SELECT list(task ORDER BY position) FROM opt_schedule_by('line', 'job', 'p', 'due', 'w',
+            setup_data := 'line_setups', algorithms := ['atcs']))
+       = (SELECT list(o) FROM (SELECT unnest(r."order")::BIGINT AS o FROM s));
+----
+true
+
+# Quoted identifiers survive.
+statement ok
+CREATE TABLE "odd ""jobs""" AS SELECT job AS "the ""job""", p AS "p t", due AS "d", w AS "w" FROM jobs;
+
+query I
+SELECT count(*) FROM opt_schedule_by('"odd ""jobs"""', 'the "job"', 'p t', 'd', 'w');
+----
+2
+
+# ── errors ───────────────────────────────────────────────────────────────────
+
+statement error
+SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithms := ['first_fit']);
+----
+<REGEX>:.*opt_pack_by: unknown algorithm 'first_fit'.*best_fit_decreasing, best_of, bin_completion.*
+
+statement error
+SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'prio', 7.0, algorithms := []);
+----
+<REGEX>:.*opt_wave_by: algorithms is empty.*
+
+statement error
+SELECT * FROM opt_schedule_by('(SELECT * FROM jobs UNION ALL SELECT * FROM jobs)', 'job', 'p', 'due', 'w');
+----
+<REGEX>:.*opt_schedule_by: job 'a' appears more than once.*
+
+statement error
+SELECT * FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w',
+    setup_data := '(SELECT * FROM setups UNION ALL SELECT ''a'', ''b'', 9.0)');
+----
+<REGEX>:.*opt_schedule_by: the pair from 'a' to 'b' appears more than once in setup_data.*
+
+# The solvers' own checks still apply.
+statement error
+SELECT * FROM opt_pack_by('(SELECT 1 AS i, -1.0 AS s)', 'i', 's', 10.0);
+----
+<REGEX>:.*(negative|>= 0).*
+
+# ── discovery ────────────────────────────────────────────────────────────────
+
+query T
+SELECT anofox_contract_version();
+----
+1
+
+query TT
+SELECT function_name, tags['anofox.output'] FROM duckdb_functions()
+WHERE tags['anofox.contract'] = '1' ORDER BY 1;
+----
+anofox_optimize_pack_by	assignment
+anofox_optimize_pack_objectives_by	summary
+anofox_optimize_schedule_by	schedule
+anofox_optimize_schedule_objectives_by	summary
+anofox_optimize_wave_by	assignment
+anofox_optimize_wave_objectives_by	summary
+opt_pack_by	assignment
+opt_pack_objectives_by	summary
+opt_schedule_by	schedule
+opt_schedule_objectives_by	summary
+opt_wave_by	assignment
+opt_wave_objectives_by	summary
+
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE (function_name LIKE 'anofox\_optimize\_%' ESCAPE '\' OR function_name LIKE 'opt\_%' ESCAPE '\')
+  AND tags['anofox.family'] IS DISTINCT FROM 'optimize';
+----
+0
+
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE tags['anofox.family'] = 'optimize'
+  AND NOT (function_name LIKE 'anofox\_optimize\_%' ESCAPE '\' OR function_name LIKE 'opt\_%' ESCAPE '\');
+----
+0
+
+# The producers are table macros, so no solver family gains a member.
+query I
+SELECT count(*) FROM duckdb_functions() WHERE tags['anofox.contract'] = '1' AND function_type <> 'table_macro';
+----
+0
+
+# The algorithm lists match the registered solvers.
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE function_type = 'scalar' AND regexp_matches(function_name, '^anofox_optimize_(pack|wave|schedule)_')
+  AND regexp_extract(function_name, '^anofox_optimize_(pack|wave|schedule)_(.*)$', 2) NOT IN (
+    'best_fit_decreasing', 'best_of', 'bin_completion', 'first_fit_decreasing', 'local_search', 'next_fit',
+    'worst_fit_decreasing', 'as_given', 'fewest_waves', 'priority_density', 'priority_first',
+    'atcs', 'edd', 'exact', 'wspt');
+----
+0

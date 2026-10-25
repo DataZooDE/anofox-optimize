@@ -63,9 +63,19 @@ jobs:
       extension_name: anofox_optimize
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
+  # anofox-visualization picks up the contract producers: the definition of done
+  # for docs/ANOFOX_CONTRACT_PLAN.md, so deploy waits for it.
+  duckdb-latest-visualization-pickup:
+    name: Visualization pickup (v1.5.6)
+    needs: duckdb-latest-build
+    uses: ./.github/workflows/_visualization_pickup.yml
+    with:
+      duckdb_version: v1.5.6
+      extension_name: anofox_optimize
+
   duckdb-latest-deploy:
     name: Deploy extension binaries (v1.5.6)
-    needs: [duckdb-latest-build, duckdb-latest-smoke-test]
+    needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup]
     # Run the deploy step even when a non-essential build matrix entry fails.
     # The deploy job itself fans out per arch and only pushes the artifacts
     # that actually exist.
