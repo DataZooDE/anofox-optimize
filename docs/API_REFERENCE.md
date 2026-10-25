@@ -16,6 +16,14 @@ Runs every assortment algorithm in this family and returns whichever captured th
 
 Example: `anofox_optimize_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
+## anofox_optimize_assortment_by
+
+`anofox_optimize_assortment_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
+
+Table macro: the shelf as one row per product: the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: CANNIBALISATION (as assortment_*): a listed product loses the demand that moves to the other listed products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+
+Example: `SELECT * FROM opt_assortment_by('products', 'sku', 'margin', 'demand', 'substitution', 24, algorithms := ['top_margin', 'best_of']);`
+
 ## anofox_optimize_assortment_greedy_marginal
 
 `anofox_optimize_assortment_greedy_marginal(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
@@ -32,6 +40,14 @@ Greedy marginal, then swaps a listed product for an unlisted one while that rais
 
 Example: `anofox_optimize_assortment_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
 
+## anofox_optimize_assortment_objectives_by
+
+`anofox_optimize_assortment_objectives_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
+
+Table macro: the objectives of assortment_* per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (captured_margin, items_listed), value, conf_low, conf_high. Same arguments as assortment_by.
+
+Example: `SELECT * FROM opt_assortment_objectives_by('products', 'sku', 'margin', 'demand', 'substitution', 24);`
+
 ## anofox_optimize_assortment_recapture_best_of
 
 `anofox_optimize_assortment_recapture_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT(listed BOOLEAN[], captured_margin DOUBLE)`
@@ -39,6 +55,14 @@ Example: `anofox_optimize_assortment_local_search([5.0,4.0],[100.0,90.0],[0.0,0.
 Runs every recapture algorithm in this family and returns whichever recaptured the most margin. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_recapture_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_by
+
+`anofox_optimize_assortment_recapture_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
+
+Table macro: the shelf as one row per product: the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: RECAPTURE (as assortment_recapture_*): a listed product keeps its demand and gains what moves to it from delisted products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+
+Example: `SELECT * FROM opt_assortment_recapture_by('products', 'sku', 'margin', 'demand', 'substitution', 24, algorithms := ['top_margin', 'best_of']);`
 
 ## anofox_optimize_assortment_recapture_greedy_marginal
 
@@ -55,6 +79,14 @@ Example: `anofox_optimize_assortment_recapture_greedy_marginal([5.0,4.0],[100.0,
 Recapture greedy, then swaps a listed product for an unlisted one while that raises recaptured margin. Escapes the greedy ordering, at O(n^2) evaluations per improving pass. MODEL: RECAPTURE — each listed product keeps margin * base_demand IN FULL, and additionally earns the demand handed to it by DELISTED products, valued at the LISTED product's own margin. A high-margin, low-demand product can be worth listing purely as a recapture sink, which a margin*demand ranking never selects. If instead listed products erode each other, use the anofox_optimize_assortment_* family: it answers a different question and the two disagree. Takes margins and base_demands (one per product) plus the substitution matrix flattened ROW-MAJOR — substitution[j*n+i] is the fraction of product j's demand that moves to product i — and a shelf limit. Returns a boolean per product and the resulting captured margin.
 
 Example: `anofox_optimize_assortment_recapture_local_search([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6,0.0], 2)`
+
+## anofox_optimize_assortment_recapture_objectives_by
+
+`anofox_optimize_assortment_recapture_objectives_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
+
+Table macro: the objectives of assortment_recapture_* per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (captured_margin, items_listed), value, conf_low, conf_high. Same arguments as assortment_recapture_by.
+
+Example: `SELECT * FROM opt_assortment_recapture_objectives_by('products', 'sku', 'margin', 'demand', 'substitution', 24);`
 
 ## anofox_optimize_assortment_recapture_top_margin
 
@@ -80,6 +112,14 @@ Runs the greedy knapsack members and returns whichever captured more value. Chea
 
 Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 
+## anofox_optimize_knapsack_by
+
+`anofox_optimize_knapsack_by(data, item_col, value_col, weight_col, capacity, group_col, algorithms)` -> table
+
+Table macro: the knapsack as one row per item: the group column, model_id (the algorithm), item, value, weight, selected, capacity. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+
+Example: `SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, algorithms := ['greedy_value', 'exact']);`
+
 ## anofox_optimize_knapsack_exact
 
 `anofox_optimize_knapsack_exact(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
@@ -103,6 +143,14 @@ Example: `anofox_optimize_knapsack_greedy_ratio([10.0, 6.0], [5.0, 4.0], 6.0)`
 0/1 knapsack by descending VALUE, ignoring weight: takes each item that still fits. The weakest member of the family — it loses to by-ratio whenever value and weight are correlated — and included so a search has a poor-but-valid option to move away from. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_greedy_value([10.0, 6.0], [5.0, 4.0], 6.0)`
+
+## anofox_optimize_knapsack_objectives_by
+
+`anofox_optimize_knapsack_objectives_by(data, item_col, value_col, weight_col, capacity, group_col, algorithms)` -> table
+
+Table macro: the objectives of the knapsack per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (items_selected, total_value, total_weight), value, conf_low, conf_high. Same arguments as knapsack_by.
+
+Example: `SELECT * FROM opt_knapsack_objectives_by('shipments', 'id', 'value', 'kg', 20.0);`
 
 ## anofox_optimize_matrix_from_triples
 
@@ -192,6 +240,14 @@ Runs every portfolio algorithm in this family and returns whichever achieved the
 
 Example: `anofox_optimize_portfolio_best_of([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
 
+## anofox_optimize_portfolio_by
+
+`anofox_optimize_portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap, group_col, algorithms)` -> table
+
+Table macro: a portfolio as one row per asset: the group column, model_id (the algorithm), item, expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; a pair given once counts both ways. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+
+Example: `SELECT * FROM opt_portfolio_by('assets', 'ticker', 'expected_return', 'covariance', 5, 0.3);`
+
 ## anofox_optimize_portfolio_greedy_sharpe
 
 `anofox_optimize_portfolio_greedy_sharpe(['DOUBLE[]', 'DOUBLE[]', BIGINT, DOUBLE])` -> `STRUCT(weights DOUBLE[], expected_return DOUBLE, volatility DOUBLE, sharpe DOUBLE)`
@@ -199,6 +255,14 @@ Example: `anofox_optimize_portfolio_best_of([0.12,0.10,0.10],[0.04,0.036,-0.01,0
 Grows the holding set one asset at a time, each time adding whichever most improves Sharpe AFTER re-optimizing the weights — so it can pick a lower-return asset because it diversifies — then SWAPS held assets for unheld ones while that improves Sharpe, which is what lets it choose a different set when the holding limit leaves no room to grow. The member that actually uses the covariance to choose WHICH assets, not just how much of them. Takes expected_returns (one per asset) and the covariance matrix flattened ROW-MAJOR, a maximum number of holdings, and a per-asset weight cap. Weights sum to 1 over the chosen assets. Returns the weight vector, expected return, volatility and Sharpe ratio (return/volatility).
 
 Example: `anofox_optimize_portfolio_greedy_sharpe([0.12,0.10,0.10],[0.04,0.036,-0.01,0.036,0.04,-0.01,-0.01,-0.01,0.04], 2, 0.6)`
+
+## anofox_optimize_portfolio_objectives_by
+
+`anofox_optimize_portfolio_objectives_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap, group_col, algorithms)` -> table
+
+Table macro: the objectives of a portfolio per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (expected_return, holdings, sharpe, volatility), value, conf_low, conf_high. Same arguments as portfolio_by.
+
+Example: `SELECT * FROM opt_portfolio_objectives_by('assets', 'ticker', 'expected_return', 'covariance', 5, 0.3, algorithms := ['top_return', 'best_of']);`
 
 ## anofox_optimize_portfolio_top_return
 
@@ -296,6 +360,14 @@ Runs every sequencing algorithm in this family and returns whichever had the low
 
 Example: `anofox_optimize_sequence_best_of([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
 
+## anofox_optimize_sequence_by
+
+`anofox_optimize_sequence_by(data, item_col, setup_data, group_col, algorithms)` -> table
+
+Table macro: a sequence as one row per item in run order: the group column, model_id (the algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the cost of running to_id right after from_id; a missing pair costs 0. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+
+Example: `SELECT * FROM opt_sequence_by('stops', 'stop', 'distances', algorithms := ['nearest_neighbour', 'two_opt']);`
+
 ## anofox_optimize_sequence_nearest_neighbour
 
 `anofox_optimize_sequence_nearest_neighbour(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
@@ -303,6 +375,14 @@ Example: `anofox_optimize_sequence_best_of([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0]
 Sequences jobs by repeatedly jumping to the cheapest unvisited successor, starting from job 0. Fast and usually far better than the given order; its classic failure is stranding an expensive job until last, which it cannot then undo. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 0-based job order and the total setup cost of that order.
 
 Example: `anofox_optimize_sequence_nearest_neighbour([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
+
+## anofox_optimize_sequence_objectives_by
+
+`anofox_optimize_sequence_objectives_by(data, item_col, setup_data, group_col, algorithms)` -> table
+
+Table macro: the objective of sequencing per group and algorithm (the anofox integration contract's `summary` schema): the group column, model_id (the algorithm), metric (total_setup), value, conf_low, conf_high. Same arguments as sequence_by.
+
+Example: `SELECT * FROM opt_sequence_objectives_by('stops', 'stop', 'distances');`
 
 ## anofox_optimize_sequence_two_opt
 

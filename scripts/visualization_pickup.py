@@ -12,7 +12,8 @@ anofox_visualization in a stock DuckDB CLI and checks, each in a fresh process:
 
   1. both extensions load in either order, and `anofox_contract_version()`
      (registered by whichever loads first) exists once and returns '1';
-  2. discovery: the tagged optimize producers are exactly EXPECTED_PRODUCERS,
+  2. discovery: the tagged optimize producers are exactly EXPECTED_PRODUCERS (the
+     long forms without a contract schema yet carry no contract tag),
      and the visualization has the plot macro for each one's schema;
   3. every producer's output renders: `anofox_plot(t)` is an SVG with no
      render warning, and it is the same SVG as the schema's own macro, so the
@@ -53,7 +54,10 @@ EXPECTED_PRODUCERS = {
     prefix + base: schema
     for base, schema in (("pack_by", "assignment"), ("pack_objectives_by", "summary"),
                          ("wave_by", "assignment"), ("wave_objectives_by", "summary"),
-                         ("schedule_by", "schedule"), ("schedule_objectives_by", "summary"))
+                         ("schedule_by", "schedule"), ("schedule_objectives_by", "summary"),
+                         ("knapsack_objectives_by", "summary"), ("sequence_objectives_by", "summary"),
+                         ("assortment_objectives_by", "summary"), ("assortment_recapture_objectives_by", "summary"),
+                         ("portfolio_objectives_by", "summary"))
     for prefix in ("opt_", "anofox_optimize_")
 }
 
@@ -72,6 +76,13 @@ CREATE TABLE jobs AS SELECT 'line ' || (i % 2) AS line, i AS job, (4 + (i * 3) %
 CREATE TABLE setups AS SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_id, b - 1 AS to_id,
     CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS value
 FROM range(0, 13) x(a), range(1, 13) y(b) WHERE a <> b;
+CREATE TABLE products AS SELECT 'shop ' || (i % 2) AS shop, i AS sku, (2 + (i * 3) % 5)::DOUBLE AS margin,
+    (60 + 15 * ((i * 2) % 5))::DOUBLE AS demand, (3 + (i * 7) % 11)::DOUBLE AS kg, 0.04 + 0.01 * (i % 5) AS ret
+FROM range(0, 12) t(i);
+CREATE TABLE pairs AS SELECT a AS from_id, b AS to_id, round(abs(sin(a * 3 + b)) * 10, 3) AS dist,
+    CASE WHEN a // 2 = b // 2 THEN 0.4 ELSE 0.03 END AS frac,
+    CASE WHEN a = b THEN 0.02 + 0.005 * (a % 4) ELSE 0.003 END AS cov
+FROM range(0, 12) x(a), range(0, 12) y(b);
 """
 
 PACK = "'cartons', 'item', 'size', 10.0, group_col := 'site', algorithms := ['next_fit', 'bin_completion']"
@@ -79,6 +90,14 @@ WAVE = ("'cartons', 'item', 'size', 'priority', 10.0, group_col := 'site', "
         "algorithms := ['as_given', 'priority_first', 'best_of']")
 SCHEDULE = ("'jobs', 'job', 'p', 'due', 'w', setup_data := 'setups', group_col := 'line', "
             "algorithms := ['edd', 'wspt', 'best_of']")
+KNAPSACK = ("'products', 'sku', 'margin', 'kg', 25.0, group_col := 'shop', "
+            "algorithms := ['greedy_value', 'greedy_ratio', 'exact']")
+SEQUENCE = ("'products', 'sku', '(SELECT from_id, to_id, dist AS value FROM pairs)', group_col := 'shop', "
+            "algorithms := ['as_given', 'nearest_neighbour', 'two_opt']")
+ASSORTMENT = ("'products', 'sku', 'margin', 'demand', '(SELECT from_id, to_id, frac AS value FROM pairs "
+              "WHERE from_id <> to_id)', 3, group_col := 'shop', algorithms := ['top_margin', 'local_search']")
+PORTFOLIO = ("'products', 'sku', 'ret', '(SELECT from_id, to_id, cov AS value FROM pairs)', 3, 0.5, "
+             "group_col := 'shop', algorithms := ['top_return', 'greedy_sharpe']")
 CALLS = {
     "opt_pack_by": f"opt_pack_by({PACK})",
     "opt_pack_objectives_by": f"opt_pack_objectives_by({PACK})",
@@ -86,10 +105,17 @@ CALLS = {
     "opt_wave_objectives_by": f"opt_wave_objectives_by({WAVE})",
     "opt_schedule_by": f"opt_schedule_by({SCHEDULE})",
     "opt_schedule_objectives_by": f"opt_schedule_objectives_by({SCHEDULE})",
+    "opt_knapsack_objectives_by": f"opt_knapsack_objectives_by({KNAPSACK})",
+    "opt_sequence_objectives_by": f"opt_sequence_objectives_by({SEQUENCE})",
+    "opt_assortment_objectives_by": f"opt_assortment_objectives_by({ASSORTMENT})",
+    "opt_assortment_recapture_objectives_by": f"opt_assortment_recapture_objectives_by({ASSORTMENT})",
+    "opt_portfolio_objectives_by": f"opt_portfolio_objectives_by({PORTFOLIO})",
 }
 # The column a producer's plots are split by (one plot per value), or None for one plot.
 PLOT_PER = {"opt_pack_by": "site", "opt_wave_by": "site", "opt_pack_objectives_by": "site",
-            "opt_wave_objectives_by": "site", "opt_schedule_objectives_by": "line"}
+            "opt_wave_objectives_by": "site", "opt_schedule_objectives_by": "line",
+            **{f"opt_{f}_objectives_by": "shop"
+               for f in ("knapsack", "sequence", "assortment", "assortment_recapture", "portfolio")}}
 
 # Both renders get the same size: anofox_plot and the schema macros have different default sizes.
 SIZE = "width := 640, height := 400"
