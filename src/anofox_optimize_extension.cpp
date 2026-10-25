@@ -5,6 +5,7 @@
 #include "duckdb.hpp"
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "batching.hpp"
+#include "contract.hpp"
 #include "knapsack.hpp"
 #include "matrix.hpp"
 #include "selection.hpp"
@@ -62,6 +63,8 @@ static void RegisterTelemetryOptions(ExtensionLoader &loader) {
 #endif // ANOFOX_TELEMETRY_ENABLED
 
 static void LoadInternal(ExtensionLoader &loader) {
+	// Before anything registers, so the contract tags only this extension's functions.
+	const auto preexisting = SnapshotSystemFunctionNames(loader);
 #ifdef ANOFOX_TELEMETRY_ENABLED
 	RegisterTelemetryOptions(loader);
 
@@ -87,6 +90,8 @@ static void LoadInternal(ExtensionLoader &loader) {
 	RegisterSelectionFunctions(loader);
 	RegisterMatrixFunctions(loader);
 	RegisterVersionFunction(loader);
+	RegisterContractFunctions(loader);
+	ApplyContractTags(loader, preexisting);
 
 	datazoo::RegisterBannerOption(loader);
 	// Last, so a load that fails earlier never advertises itself. Silent

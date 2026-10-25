@@ -45,6 +45,7 @@ set(EXTENSION_SOURCES
     src/selection.cpp
     src/matrix.cpp
     src/version.cpp
+    src/contract.cpp
 )
 
 # Feedback banner (header-only). Its telemetry is separate from the extension's

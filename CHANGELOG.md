@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **anofox integration contract** (#6): decisions plot in
+  [anofox-visualization](https://github.com/DataZooDE/anofox-visualization) with no hand-written unnest SQL.
+  - Table macros run the solvers over a table's rows and return one row per item:
+    - `pack_by` and `wave_by` return the contract's `assignment` schema (bin or wave, item, size, capacity);
+    - `schedule_by` returns the `schedule` schema, a Gantt chart (resource, task, start, end, setup, due,
+      tardiness, status).
+  - `pack_objectives_by`, `wave_objectives_by` and `schedule_objectives_by` return the solvers' objectives as
+    the `summary` schema.
+  - `algorithms :=` names the family members to run, and each becomes a `model_id`, so algorithms compare
+    in one plot. `group_col :=` splits the rows into instances.
+  - `schedule_by` builds the setup matrix from a `(from_job, to_job, setup)` table.
+  - Each macro exists as `anofox_optimize_*` and `opt_*`. The producers are tagged in `duckdb_functions()`
+    (`anofox.contract = '1'`, `anofox.output`), and every optimize function carries
+    `anofox.family = 'optimize'`.
+  - `anofox_contract_version()` returns `'1'`. It is registered only if no other anofox extension has
+    registered it.
+- **Visualization pickup check**: the built extension next to a released anofox_visualization in the
+  official DuckDB CLI. It runs as `scripts/visualization_pickup.py`, `make test_visualization`, and a CI job
+  that deploy waits for. It checks both load orders and the tags, and runs every producer's output through
+  `anofox_plot`, which must detect its schema; items and jobs must keep their sizes and times.
+- `scripts/generate_api_reference.sh` lists table macros with their parameter names.
+
 ## v2026.10.22
 
 Builds on **DuckDB 2.0.0** and v1.5.6 (1.4.x is no longer supported).
