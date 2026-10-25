@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## v2026.10.26
+
+**Breaking:** every index the solvers return is a 1-based BIGINT, the SQL convention (#7). Producers gain `row_order`.
 
 ### Breaking
 
