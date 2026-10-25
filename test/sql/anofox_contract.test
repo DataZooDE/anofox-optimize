@@ -50,6 +50,7 @@ bin	BIGINT
 item	INTEGER
 size	DOUBLE
 capacity	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, group_col := 'site'));
@@ -60,6 +61,7 @@ bin	BIGINT
 item	INTEGER
 size	DOUBLE
 capacity	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'prio', 7.0));
@@ -70,6 +72,7 @@ item	VARCHAR
 size	DOUBLE
 capacity	DOUBLE
 priority	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w', setup_data := 'setups'));
@@ -86,6 +89,7 @@ due	DOUBLE
 priority	DOUBLE
 tardiness	DOUBLE
 status	VARCHAR
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_schedule_objectives_by('jobs', 'job', 'p', 'due', 'w', group_col := 'job'));
@@ -96,6 +100,7 @@ metric	VARCHAR
 value	DOUBLE
 conf_low	DOUBLE
 conf_high	DOUBLE
+row_order	BIGINT
 
 # ── pack_by: hand-checked placements ─────────────────────────────────────────
 
@@ -365,3 +370,27 @@ WHERE function_type = 'scalar' AND regexp_matches(function_name, '^anofox_optimi
     'atcs', 'edd', 'exact', 'wspt');
 ----
 0
+
+# ── row_order: 1-based, over the whole table, in the producer's own order ────
+
+query I
+WITH t AS (FROM opt_pack_by('many', 'item', 'size', 10.0, group_col := 'my site', algorithms := ['next_fit', 'best_of']))
+SELECT list(row_order ORDER BY row_order) = range(1, count(*) + 1)::BIGINT[]
+   AND list(item ORDER BY row_order) = list(item ORDER BY "my site", model_id, bin, item) FROM t;
+----
+true
+
+query I
+WITH t AS (FROM opt_schedule_by('line', 'job', 'p', 'due', 'w', setup_data := 'line_setups', algorithms := ['edd', 'exact']))
+SELECT list(row_order ORDER BY row_order) = range(1, count(*) + 1)::BIGINT[]
+   AND list(task ORDER BY row_order) = list(task ORDER BY model_id, position) FROM t;
+----
+true
+
+query I
+WITH t AS (FROM opt_wave_objectives_by('many', 'item', 'size', 'priority', 10.0, group_col := 'my site',
+                                       algorithms := ['as_given', 'best_of']))
+SELECT list(row_order ORDER BY row_order) = range(1, count(*) + 1)::BIGINT[]
+   AND list(metric ORDER BY row_order) = list(metric ORDER BY "my site", model_id, metric) FROM t;
+----
+true

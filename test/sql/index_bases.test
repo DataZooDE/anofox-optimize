@@ -1,0 +1,76 @@
+# name: test/sql/index_bases.test
+# description: every index a solver returns is 1-based, the SQL convention (list[1] is the first element)
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# pack_*: bins 1..bins_used, for every member.
+query I
+SELECT count(*) FROM (
+    SELECT unnest([opt_pack_best_fit_decreasing([4.0, 8.0, 1.0, 6.0], 10.0), opt_pack_best_of([4.0, 8.0, 1.0, 6.0], 10.0),
+                   opt_pack_bin_completion([4.0, 8.0, 1.0, 6.0], 10.0), opt_pack_first_fit_decreasing([4.0, 8.0, 1.0, 6.0], 10.0),
+                   opt_pack_local_search([4.0, 8.0, 1.0, 6.0], 10.0), opt_pack_next_fit([4.0, 8.0, 1.0, 6.0], 10.0),
+                   opt_pack_worst_fit_decreasing([4.0, 8.0, 1.0, 6.0], 10.0)]) AS r)
+WHERE list_min(r.assignment) <> 1 OR list_max(r.assignment) <> r.bins_used;
+----
+0
+
+# First-fit decreasing, capacity 10: 8 opens bin 1, 4 opens bin 2, 1 joins bin 1.
+query I
+SELECT opt_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0).assignment;
+----
+[2, 1, 1]
+
+# wave_* was already 1-based.
+query I
+SELECT opt_wave_as_given([3.0, 4.0, 5.0], [1.0, 5.0, 1.0], 7.0).wave;
+----
+[1, 1, 2]
+
+# sequence_* and schedule_*: the order is a permutation of 1..n, so items[order[i]] is the i-th item to run.
+query I
+SELECT opt_sequence_as_given([0.0, 5.0, 9.0, 5.0, 0.0, 3.0, 9.0, 3.0, 0.0], 3)."order";
+----
+[1, 2, 3]
+
+query I
+WITH s AS (SELECT ['a', 'b', 'c'] AS items, opt_sequence_two_opt([0.0, 1.0, 9.0, 1.0, 0.0, 9.0, 1.0, 1.0, 0.0], 3) AS r)
+SELECT list_sort(r."order") = [1, 2, 3] AND list_sort([items[i] FOR i IN r."order"]) = ['a', 'b', 'c'] FROM s;
+----
+true
+
+# Job b (due 5, priority 3) first: order [2, 1].
+query I
+SELECT opt_schedule_exact([10.0, 10.0], [20.0, 5.0], [1.0, 3.0], [5.0, 5.0, 5.0, 0.0, 2.0, 2.0, 0.0, 2.0, 2.0], 2)."order";
+----
+[2, 1]
+
+query I
+SELECT count(*) FROM (
+    SELECT unnest([opt_schedule_atcs([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3),
+                   opt_schedule_best_of([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3),
+                   opt_schedule_edd([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3),
+                   opt_schedule_exact([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3),
+                   opt_schedule_local_search([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3),
+                   opt_schedule_wspt([4.0, 7.0, 5.0], [8.0, 14.0, 20.0], [1.0, 2.0, 3.0], [0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 3.0, 0.0, 2.0, 1.0, 1.0, 0.0, 2.0, 3.0, 2.0, 0.0], 3)]) AS r)
+WHERE list_sort(r."order") <> [1, 2, 3];
+----
+0
+
+query I
+SELECT count(*) FROM (
+    SELECT unnest([opt_sequence_as_given([0.0, 5.0, 9.0, 5.0, 0.0, 3.0, 9.0, 3.0, 0.0], 3),
+                   opt_sequence_best_of([0.0, 5.0, 9.0, 5.0, 0.0, 3.0, 9.0, 3.0, 0.0], 3),
+                   opt_sequence_nearest_neighbour([0.0, 5.0, 9.0, 5.0, 0.0, 3.0, 9.0, 3.0, 0.0], 3),
+                   opt_sequence_two_opt([0.0, 5.0, 9.0, 5.0, 0.0, 3.0, 9.0, 3.0, 0.0], 3)]) AS r)
+WHERE list_sort(r."order") <> [1, 2, 3];
+----
+0
+
+# The descriptions say so, and none still says 0-based.
+query I
+SELECT count(*) FROM duckdb_functions()
+WHERE (function_name LIKE 'anofox\_optimize\_%' ESCAPE '\' OR function_name LIKE 'opt\_%' ESCAPE '\')
+  AND description ILIKE '%0-based%';
+----
+0
