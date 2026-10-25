@@ -14,7 +14,12 @@
     the `summary` schema.
   - `algorithms :=` names the family members to run, and each becomes a `model_id`, so algorithms compare
     in one plot. `group_col :=` splits the rows into instances.
-  - `schedule_by` builds the setup matrix from a `(from_id, to_id, value)` table.
+  - `knapsack_by`, `sequence_by`, `assortment_by`, `assortment_recapture_by` and `portfolio_by` return the other
+    families' decisions one row per item. The contract has no schema for these yet, so they are not tagged.
+    Their `*_objectives_by` are tagged `summary`.
+  - Matrix inputs are pairs tables with the columns `(from_id, to_id, value)`: `setup_data` (schedule,
+    sequence), `substitution_data` and `covariance_data`. A missing pair is 0, a duplicate is an error, and a
+    covariance pair given once counts both ways.
   - Each macro exists as `anofox_optimize_*` and `opt_*`. The producers are tagged in `duckdb_functions()`
     (`anofox.contract = '1'`, `anofox.output`), and every optimize function carries
     `anofox.family = 'optimize'`.

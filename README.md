@@ -115,6 +115,12 @@ SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 
   In a schedule each group is a machine: one lane of the Gantt chart. The assignment
   plot does not separate groups, so plot packings and waves one group at a time
   (`WHERE site = 'w1'`).
+- `knapsack_by`, `sequence_by`, `assortment_by`, `assortment_recapture_by` and
+  `portfolio_by` give the other families' decisions as long tables too. Their
+  `*_objectives_by` plot as model comparisons.
+- **A matrix argument is a pairs table** with the columns `from_id, to_id, value`:
+  `setup_data`, `substitution_data` or `covariance_data`. A missing pair is 0;
+  a covariance pair given once counts both ways.
 - The tables follow the anofox integration contract (`assignment`, `schedule` and
   `summary`), and `duckdb_functions()` tags the producers.
 - Plan and details: [docs/ANOFOX_CONTRACT_PLAN.md](docs/ANOFOX_CONTRACT_PLAN.md).

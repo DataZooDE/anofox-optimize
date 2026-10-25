@@ -97,19 +97,39 @@ Every producer exists as `anofox_optimize_*` and as `opt_*`.
   The macros are `table_macro` entries, not scalar functions, so they are not
   a new member of any solver family.
 
-## Not in scope (PR 2)
+## The other families (PR 2)
 
-There is no contract schema yet for the other families' decisions.
-Long forms for them are a follow-up, tagged once the visualization has a
-schema, or untagged if it never gets one:
+There is no contract schema yet for the other families' decisions, so
+their long forms carry only `anofox.family`. They get a contract tag once
+the visualization has a schema for them. Their objectives are tagged
+`summary` and plot today.
 
-- `knapsack_*` (selected items);
-- `sequence_*` (an order, a route);
-- `assortment_*` / `assortment_recapture_*` (listed products);
-- `portfolio_*` (weights).
+| Producer | Long form (untagged) | Objectives (`summary`) |
+|---|---|---|
+| `knapsack_by(data, item_col, value_col, weight_col, capacity [, …])` | item, value, weight, selected, capacity | items_selected, total_value, total_weight |
+| `sequence_by(data, item_col, setup_data [, …])` | position, item, setup, cumulative_setup | total_setup |
+| `assortment_by` / `assortment_recapture_by(data, item_col, margin_col, demand_col, substitution_data, shelf [, …])` | item, margin, demand, listed | captured_margin, items_listed |
+| `portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap [, …])` | item, expected_return, weight | expected_return, holdings, sharpe, volatility |
 
-Their objectives (`summary`) fit today. They need matrix inputs as tables
-too (substitution, covariance, setup), so they come with the long forms.
+**A matrix is a pairs table with the columns `from_id, to_id, value`.**
+This holds in every family; `setup_data` in `schedule_by` uses the same
+columns. Each argument is named for its meaning:
+
+- `setup_data` (schedule, sequence);
+- `substitution_data` (the fraction of `from_id`'s demand that moves to
+  `to_id`);
+- `covariance_data`.
+
+The pairs are handled like this:
+
+- A missing pair is 0, and a duplicate pair is an error.
+- Pairs whose ids are not in a group are ignored.
+- A NULL `from_id` is the virtual start in `schedule_by` and an error
+  elsewhere.
+- A covariance pair given once counts both ways. Given both ways, the two
+  values must agree.
+
+The ids must be unique per group in every family except `pack` and `wave`.
 
 ## Definition of done: anofox-visualization picks the producers up
 
