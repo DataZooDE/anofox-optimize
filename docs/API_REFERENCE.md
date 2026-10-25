@@ -236,7 +236,7 @@ Example: `anofox_optimize_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0
 
 `anofox_optimize_schedule_by(data, job_col, processing_col, due_col, priority_col, setup_data, group_col, algorithms)` -> table
 
-Table macro: single-machine scheduling as one row per job, a Gantt chart (the anofox integration contract's `schedule` schema, for anofox_plot): the group column, model_id (the algorithm), resource (the group, else 'machine'), task (the job), position, start, end, setup, processing, due, priority, tardiness, status ('on time' / 'late'). A job's setup runs before it, so the last end is the makespan. Each group of data is one machine, scheduled by every schedule_* algorithm in algorithms (default ['best_of']). setup_data is a table or '(SELECT ...)' with columns from_job, to_job, setup (from_job NULL: before the first job); a missing pair costs 0. Job ids must be unique per group.
+Table macro: single-machine scheduling as one row per job, a Gantt chart (the anofox integration contract's `schedule` schema, for anofox_plot): the group column, model_id (the algorithm), resource (the group, else 'machine'), task (the job), position, start, end, setup, processing, due, priority, tardiness, status ('on time' / 'late'). A job's setup runs before it, so the last end is the makespan. Each group of data is one machine, scheduled by every schedule_* algorithm in algorithms (default ['best_of']). setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value (from_id NULL: before the first job); a missing pair costs 0. Job ids must be unique per group.
 
 Example: `SELECT * FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority', setup_data := 'changeovers', algorithms := ['edd', 'best_of']);`
 

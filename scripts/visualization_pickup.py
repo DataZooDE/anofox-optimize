@@ -63,14 +63,14 @@ SCHEMA_MACRO = {"assignment": "anofox_plot_assignment", "schedule": "anofox_plot
 DEFAULT_VIZ_REPO = "https://datazoode.github.io/anofox-visualization/extensions"
 
 # 24 cartons at two sites, 10 units per container or wave; 6 jobs on two lines with
-# sequence-dependent setups (from_job NULL: before the first job).
+# sequence-dependent setups (from_id NULL: before the first job).
 FIXTURE = """
 CREATE TABLE cartons AS SELECT 'site ' || (i % 2) AS site, i AS item, (2 + (i * 5) % 7)::DOUBLE AS size,
     (1 + (i * 3) % 4)::DOUBLE AS priority FROM range(1, 25) t(i);
 CREATE TABLE jobs AS SELECT 'line ' || (i % 2) AS line, i AS job, (4 + (i * 3) % 5)::DOUBLE AS p,
     (8 + 6 * i)::DOUBLE AS due, (1 + i % 3)::DOUBLE AS w FROM range(0, 12) t(i);
-CREATE TABLE setups AS SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_job, b - 1 AS to_job,
-    CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS setup
+CREATE TABLE setups AS SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_id, b - 1 AS to_id,
+    CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS value
 FROM range(0, 13) x(a), range(1, 13) y(b) WHERE a <> b;
 """
 

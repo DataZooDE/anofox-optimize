@@ -14,7 +14,7 @@
     the `summary` schema.
   - `algorithms :=` names the family members to run, and each becomes a `model_id`, so algorithms compare
     in one plot. `group_col :=` splits the rows into instances.
-  - `schedule_by` builds the setup matrix from a `(from_job, to_job, setup)` table.
+  - `schedule_by` builds the setup matrix from a `(from_id, to_id, value)` table.
   - Each macro exists as `anofox_optimize_*` and `opt_*`. The producers are tagged in `duckdb_functions()`
     (`anofox.contract = '1'`, `anofox.output`), and every optimize function carries
     `anofox.family = 'optimize'`.

@@ -100,7 +100,7 @@ SELECT anofox_plot(t) FROM opt_pack_by('cartons', 'carton', 'size', 10.0,
     algorithms := ['next_fit', 'bin_completion']) t;
 
 -- A Gantt chart per algorithm; late jobs in red. Setups come from a
--- (from_job, to_job, setup) table, from_job NULL being the first job's.
+-- (from_id, to_id, value) table, from_id NULL being the first job's.
 SELECT anofox_plot(t) FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority',
     setup_data := 'changeovers', algorithms := ['edd', 'best_of']) t;
 

@@ -74,7 +74,7 @@ std::string Q(const std::string &param) {
 
 // Dyn(sql): the SQL expression that builds `sql` as query() text. Plain SQL in, with placeholders:
 //   {data}      the data argument as given (a table name or a '(SELECT …)' string)
-//   {setup}     setup_data as given, or an empty (from_job, to_job, setup) relation
+//   {setup}     setup_data as given, or an empty (from_id, to_id, value) relation
 //   {q:param}   the column named by the parameter, double-quoted
 //   {n:param}   the parameter as a DOUBLE literal
 //   {gin}       the group column as an input expression, NULL without group_col
@@ -87,7 +87,7 @@ std::string DynExpr(const std::string &token) {
 		return "data";
 	}
 	if (token == "setup") {
-		return "coalesce(setup_data, '(SELECT NULL AS from_job, NULL AS to_job, NULL::DOUBLE AS setup WHERE false)')";
+		return "coalesce(setup_data, '(SELECT NULL AS from_id, NULL AS to_id, NULL::DOUBLE AS value WHERE false)')";
 	}
 	if (token == "gin") {
 		return "CASE WHEN group_col IS NULL THEN 'NULL' ELSE " + Q("group_col") + " END";
@@ -177,12 +177,12 @@ std::string SchedulePrefix(const std::string &fn) {
 	       "ELSE ' in group ''' || _g::VARCHAR || '''' END || '. Fix: give every job its own id, or pass "
 	       "group_col so each group is its own schedule.') ELSE row_number() OVER (PARTITION BY _g ORDER BY _job) "
 	       "END AS _i FROM _in), "
-	       "_st AS (SELECT from_job AS _f, to_job AS _t, CASE WHEN count(*) OVER (PARTITION BY from_job, to_job) > 1 "
+	       "_st AS (SELECT from_id AS _f, to_id AS _t, CASE WHEN count(*) OVER (PARTITION BY from_id, to_id) > 1 "
 	       "THEN error('" +
 	       fn +
-	       ": the setup from ''' || coalesce(from_job::VARCHAR, 'the start') || ''' to ''' || to_job::VARCHAR || "
-	       "''' appears more than once in setup_data. Fix: keep one row per (from_job, to_job).') "
-	       "ELSE CAST(setup AS DOUBLE) END AS _v FROM (FROM {setup})), "
+	       ": the pair from ''' || coalesce(from_id::VARCHAR, 'the start') || ''' to ''' || to_id::VARCHAR || "
+	       "''' appears more than once in setup_data. Fix: keep one row per (from_id, to_id).') "
+	       "ELSE CAST(value AS DOUBLE) END AS _v FROM (FROM {setup})), "
 	       "_sx AS (SELECT t._g, coalesce(f._i, 0) AS _fi, t._i AS _ti, _st._v FROM _st JOIN _ix t ON _st._t = t._job "
 	       "LEFT JOIN _ix f ON f._g IS NOT DISTINCT FROM t._g AND _st._f = f._job "
 	       "WHERE _st._f IS NULL OR f._i IS NOT NULL), "
@@ -294,7 +294,7 @@ vector<Family> Families() {
 	     "group, else 'machine'), task (the job), position, start, end, setup, processing, due, priority, tardiness, "
 	     "status ('on time' / 'late'). A job's setup runs before it, so the last end is the makespan. Each group of "
 	     "data is one machine, scheduled by every schedule_* algorithm in algorithms (default ['best_of']). "
-	     "setup_data is a table or '(SELECT ...)' with columns from_job, to_job, setup (from_job NULL: before the "
+	     "setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value (from_id NULL: before the "
 	     "first job); a missing pair costs 0. Job ids must be unique per group.",
 	     "Table macro: the objectives of single-machine scheduling per group and algorithm (the anofox integration "
 	     "contract's `summary` schema): the group column, model_id (the algorithm), metric (late_jobs, makespan, "

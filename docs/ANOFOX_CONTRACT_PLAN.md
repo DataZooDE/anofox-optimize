@@ -74,8 +74,8 @@ Every producer exists as `anofox_optimize_*` and as `opt_*`.
 - **`resource` is the machine:** the group's value as text when `group_col`
   is given (one machine per group), else `'machine'`.
 - **Setups come from a table, not a flat matrix.** `setup_data` is a table
-  name or `'(SELECT …)'` string with the columns `from_job, to_job, setup`.
-  `from_job` NULL is the setup before the first job; a missing pair costs 0.
+  name or `'(SELECT …)'` string with the columns `from_id, to_id, value`.
+  `from_id` NULL is the setup before the first job; a missing pair costs 0.
   The macro builds the solver's `(n+1)²` row-major matrix from it, as
   `matrix_from_triples` does for the scalar functions. A duplicate pair is an
   error. A pair whose jobs are not in a group is ignored, so one setup table

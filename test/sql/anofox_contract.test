@@ -19,7 +19,7 @@ CREATE TABLE jobs AS SELECT * FROM (VALUES
 
 statement ok
 CREATE TABLE setups AS SELECT * FROM (VALUES
-    (NULL, 'a', 5.0), (NULL, 'b', 5.0), ('a', 'b', 2.0), ('b', 'a', 2.0)) t(from_job, to_job, setup);
+    (NULL, 'a', 5.0), (NULL, 'b', 5.0), ('a', 'b', 2.0), ('b', 'a', 2.0)) t(from_id, to_id, value);
 
 # A bigger instance, so the members disagree: 12 cartons, 2 sites.
 statement ok
@@ -36,8 +36,8 @@ FROM range(0, 6) t(i);
 
 statement ok
 CREATE TABLE line_setups AS
-SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_job, b - 1 AS to_job,
-       CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS setup
+SELECT CASE WHEN a = 0 THEN NULL ELSE a - 1 END AS from_id, b - 1 AS to_id,
+       CASE WHEN a = 0 THEN 1.0 ELSE (1 + (a * 7 + b * 3) % 4)::DOUBLE END AS value
 FROM range(0, 7) x(a), range(1, 7) y(b) WHERE a <> b;
 
 # ── columns ──────────────────────────────────────────────────────────────────
@@ -263,7 +263,7 @@ WHERE abs(mk - o.makespan) > 1e-9 OR abs(twt - o.total_weighted_tardiness) > 1e-
 0
 
 query T
-WITH m AS (SELECT opt_matrix_from_triples(list(coalesce(from_job + 1, 0)), list(to_job + 1), list(setup), 7, 0) AS setup
+WITH m AS (SELECT opt_matrix_from_triples(list(coalesce(from_id + 1, 0)), list(to_id + 1), list(value), 7, 0) AS setup
            FROM line_setups),
      s AS (SELECT opt_schedule_atcs(list(p ORDER BY job), list(due ORDER BY job), list(w ORDER BY job), (FROM m), 6) AS r
            FROM line)
@@ -303,7 +303,7 @@ statement error
 SELECT * FROM opt_schedule_by('jobs', 'job', 'p', 'due', 'w',
     setup_data := '(SELECT * FROM setups UNION ALL SELECT ''a'', ''b'', 9.0)');
 ----
-<REGEX>:.*opt_schedule_by: the setup from 'a' to 'b' appears more than once.*
+<REGEX>:.*opt_schedule_by: the pair from 'a' to 'b' appears more than once in setup_data.*
 
 # The solvers' own checks still apply.
 statement error
