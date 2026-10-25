@@ -93,8 +93,8 @@ triples, so build the matrix with:
 opt_matrix_from_triples(list(from_idx), list(to_idx), list(value), n, index_base)
 ```
 
-`index_base` is subtracted from your ids: pass `1` for 1-based ids, `0` for
-0-based. Missing cells become 0; duplicates raise rather than silently
+`index_base` is subtracted from your ids: pass `1` for ids numbered from 1,
+`0` for ids numbered from 0. Missing cells become 0; duplicates raise rather than silently
 keeping the last one. See [Working With Your Tables](03-working-with-your-tables.md).
 
 ## Sizes and limits

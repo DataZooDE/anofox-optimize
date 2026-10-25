@@ -27,7 +27,7 @@ packed AS (
     SELECT opt_pack_best_of(list(size ORDER BY pos), 1000.0).assignment AS bins
     FROM ordered
 )
-SELECT o.item_id, p.bins[o.pos] + 1 AS bin_number
+SELECT o.item_id, p.bins[o.pos] AS bin_number
 FROM ordered o CROSS JOIN packed p;
 ```
 
@@ -37,8 +37,10 @@ FROM ordered o CROSS JOIN packed p;
 SELECT opt_pack_best_of(list(size), 1000.0) FROM items;
 ```
 
-Remember: **DuckDB lists are 1-indexed; returned assignments and orders are
-0-based.** Add 1 when presenting them, and index with the 1-based position.
+Remember: **everything is 1-based, as in SQL.** Lists are 1-indexed, and so
+are the returned bins and orders: present them as they are, and
+`items[order[k]]` is the *k*-th item to run. (Before v2026.10.26 bins and
+orders were 0-based.)
 
 ## Building a matrix from triples
 
@@ -97,7 +99,7 @@ packed AS (
     FROM ordered
     GROUP BY warehouse_id
 )
-SELECT o.warehouse_id, o.item_id, p.r.assignment[o.pos] + 1 AS bin_number
+SELECT o.warehouse_id, o.item_id, p.r.assignment[o.pos] AS bin_number
 FROM ordered o
 JOIN packed p USING (warehouse_id);
 ```

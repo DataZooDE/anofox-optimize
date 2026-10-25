@@ -74,3 +74,11 @@ WHERE (function_name LIKE 'anofox\_optimize\_%' ESCAPE '\' OR function_name LIKE
   AND description ILIKE '%0-based%';
 ----
 0
+
+# Indexes are BIGINT like row_number() and count(*), so they index a list directly (DuckDB has no implicit
+# UBIGINT -> BIGINT cast for list indexing).
+query TTTT
+SELECT typeof(opt_pack_next_fit([1.0], 2.0)), typeof(opt_wave_as_given([1.0], [1.0], 2.0)),
+       typeof(opt_sequence_as_given([0.0], 1)), typeof(opt_schedule_edd([1.0], [1.0], [1.0], [0.0, 0.0, 0.0, 0.0], 1));
+----
+STRUCT(bins_used BIGINT, "assignment" BIGINT[])	STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)	STRUCT("order" BIGINT[], total_setup DOUBLE)	STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)

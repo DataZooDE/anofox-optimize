@@ -169,7 +169,7 @@ WITH m AS (SELECT opt_matrix_from_triples(list(from_id), list(to_id), list(value
      s AS (SELECT opt_sequence_two_opt((FROM m), 16) AS r)
 SELECT (SELECT list(item ORDER BY position) FROM opt_sequence_by('many', 'item',
             '(SELECT from_id, to_id, value FROM many_pairs)', algorithms := ['two_opt']))
-       = (SELECT list(o) FROM (SELECT unnest(r."order")::BIGINT AS o FROM s));
+       = (SELECT [o - 1 FOR o IN r."order"] FROM s);
 ----
 true
 

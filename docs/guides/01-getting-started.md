@@ -36,11 +36,11 @@ FROM cartons;
 ```
 
 ```
-{'bins_used': 3, 'assignment': [1, 0, 0, 2, 2, 1]}
+{'bins_used': 3, 'assignment': [2, 1, 1, 3, 3, 2]}
 ```
 
 Three containers — and `ceil(sum(size)/1000)` is also 3, so this is provably
-optimal. `assignment[i]` is the 0-based container the *i*-th item went into,
+optimal. `assignment[i]` is the container (numbered from 1) the *i*-th item went into,
 in the same order you passed the sizes.
 
 ## Mapping the answer back to your rows
@@ -58,7 +58,7 @@ packed AS (
     SELECT opt_pack_best_of(list(size ORDER BY pos), 1000.0).assignment AS bins
     FROM ordered
 )
-SELECT o.carton_id, o.size, p.bins[o.pos] + 1 AS container
+SELECT o.carton_id, o.size, p.bins[o.pos] AS container
 FROM ordered o CROSS JOIN packed p
 ORDER BY container, o.carton_id;
 ```
@@ -68,8 +68,10 @@ Two things to note, because both are common mistakes:
 - **`row_number() OVER ()` with no `ORDER BY` is not stable.** Always give it
   an explicit ordering, or the positions you build the input with may not
   match the ones you read the output with.
-- **DuckDB lists are 1-indexed, the returned assignments are 0-based.** Hence
-  the `+ 1` above, and `bins[o.pos]` using the 1-based position.
+- **Everything is 1-based, as in SQL.** Lists are 1-indexed, and so are the
+  returned bins and orders, so `bins[o.pos]` is the container directly and
+  `items[order[k]]` is the *k*-th item to run. (Before v2026.10.26 bins and
+  orders were 0-based.)
 
 ## Which function do I want?
 

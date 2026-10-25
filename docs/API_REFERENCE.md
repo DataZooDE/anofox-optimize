@@ -156,13 +156,13 @@ Example: `SELECT * FROM opt_knapsack_objectives_by('shipments', 'id', 'value', '
 
 `anofox_optimize_matrix_from_triples(['BIGINT[]', 'BIGINT[]', 'DOUBLE[]', BIGINT, BIGINT])` -> `DOUBLE[]`
 
-Builds the flattened ROW-MAJOR matrix the sequencing, scheduling, assortment and portfolio functions expect, from (from, to, value) TRIPLES — which is how the data is usually stored. Missing cells are 0; duplicate cells RAISE rather than silently keeping the last one. `index_base` is subtracted from the ids, so pass 1 for 1-based ids and 0 for 0-based. Use with list aggregation, e.g. `SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.
+Builds the flattened ROW-MAJOR matrix the sequencing, scheduling, assortment and portfolio functions expect, from (from, to, value) TRIPLES — which is how the data is usually stored. Missing cells are 0; duplicate cells RAISE rather than silently keeping the last one. `index_base` is subtracted from the ids, so pass 1 for ids numbered from 1 and 0 for ids numbered from 0. Use with list aggregation, e.g. `SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.
 
 Example: `anofox_optimize_matrix_from_triples([1,2], [2,1], [0.5, 0.5], 2, 1)`
 
 ## anofox_optimize_pack_best_fit_decreasing
 
-`anofox_optimize_pack_best_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_best_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Packs items into bins by best-fit-decreasing: sorts items largest first and puts each into the FULLEST bin it still fits, leaving emptier bins for larger items later. Same signature as the other packing functions.
 
@@ -170,7 +170,7 @@ Example: `anofox_optimize_pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
 ## anofox_optimize_pack_best_of
 
-`anofox_optimize_pack_best_of(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_best_of(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Runs every packing algorithm in this family and returns whichever used the fewest bins. Costs the sum of the parts and never loses to any single member; use it when you do not want to choose. Same signature as the other packing functions.
 
@@ -178,7 +178,7 @@ Example: `anofox_optimize_pack_best_of([4.0, 8.0, 1.0], 10.0)`
 
 ## anofox_optimize_pack_bin_completion
 
-`anofox_optimize_pack_bin_completion(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_bin_completion(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Packs items by BOUNDED BIN COMPLETION: seeds each bin with the largest unplaced item, searches all PAIRS of companions exhaustively for the combination that fills the bin fullest, then tops up greedily with anything that still fits. Not exhaustive over arbitrary subsets and not optimal, but it recovers the exact three-per-bin fills that make every greedy member stall together on triplet-style instances. Costs O(n^2) per bin. Same signature as the other packing functions.
 
@@ -194,15 +194,15 @@ Example: `SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithm
 
 ## anofox_optimize_pack_first_fit_decreasing
 
-`anofox_optimize_pack_first_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_first_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items into bins by first-fit-decreasing: sorts items largest first and puts each into the first bin it fits. Fast and near-optimal on typical instances, but provably up to 11/9 of optimal and weak on triplet-style instances. Returns bins_used and a 0-based bin index per input item. An empty item list uses 0 bins; a non-empty list of zero-size items uses 1.
+Packs items into bins by first-fit-decreasing: sorts items largest first and puts each into the first bin it fits. Fast and near-optimal on typical instances, but provably up to 11/9 of optimal and weak on triplet-style instances. Returns bins_used and a 1-based bin number per input item. An empty item list uses 0 bins; a non-empty list of zero-size items uses 1.
 
 Example: `anofox_optimize_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
 ## anofox_optimize_pack_local_search
 
-`anofox_optimize_pack_local_search(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_local_search(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Packs items by first-fit-decreasing and then IMPROVES the result: tries to dissolve bins one at a time, from least-loaded upward, by relocating their items into other bins — including a swap that displaces a smaller item to a third bin to make room. Repeats until no bin can be emptied. Slower than the greedy members; on triplet-style instances it does not beat them (use bin_completion there). Same signature as the other packing functions.
 
@@ -210,7 +210,7 @@ Example: `anofox_optimize_pack_local_search([4.0, 8.0, 1.0], 10.0)`
 
 ## anofox_optimize_pack_next_fit
 
-`anofox_optimize_pack_next_fit(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_next_fit(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Packs items into bins by next-fit, in the given order, only ever using the most recently opened bin. The weakest member of the family and the cheapest; included so a search has a poor-but-valid baseline to move away from.
 
@@ -226,7 +226,7 @@ Example: `SELECT * FROM opt_pack_objectives_by('cartons', 'carton', 'size', 10.0
 
 ## anofox_optimize_pack_worst_fit_decreasing
 
-`anofox_optimize_pack_worst_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used UBIGINT, "assignment" UBIGINT[])`
+`anofox_optimize_pack_worst_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
 Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than best-fit but produces balanced loads. Same signature as the other packing functions.
 
@@ -282,17 +282,17 @@ Example: `anofox_optimize_portfolio_top_return_optimized([0.12,0.10,0.10],[0.04,
 
 ## anofox_optimize_schedule_atcs
 
-`anofox_optimize_schedule_atcs(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_atcs(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Sequences jobs by APPARENT TARDINESS COST WITH SETUPS: at each step picks the job maximising priority/processing, discounted by its slack and by the setup needed to switch to it. Unlike EDD and WSPT it weighs due dates, priorities AND setups together, which is what this objective actually trades off. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+Sequences jobs by APPARENT TARDINESS COST WITH SETUPS: at each step picks the job maximising priority/processing, discounted by its slack and by the setup needed to switch to it. Unlike EDD and WSPT it weighs due dates, priorities AND setups together, which is what this objective actually trades off. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_atcs([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
 ## anofox_optimize_schedule_best_of
 
-`anofox_optimize_schedule_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Runs every scheduling algorithm in this family and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any single member. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+Runs every scheduling algorithm in this family and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any single member. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
@@ -306,25 +306,25 @@ Example: `SELECT * FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priori
 
 ## anofox_optimize_schedule_edd
 
-`anofox_optimize_schedule_edd(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_edd(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Sequences jobs by EARLIEST DUE DATE. The textbook rule and optimal for maximum lateness without setups, but it ignores priorities and setup costs entirely, so it can be poor on weighted tardiness. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+Sequences jobs by EARLIEST DUE DATE. The textbook rule and optimal for maximum lateness without setups, but it ignores priorities and setup costs entirely, so it can be poor on weighted tardiness. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_edd([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
 ## anofox_optimize_schedule_exact
 
-`anofox_optimize_schedule_exact(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_exact(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled set, last job). Weighted tardiness with sequence-dependent setups is NP-hard, so this is exponential: it REFUSES more than 16 jobs with an error naming the heuristic to use instead, rather than running for hours. Use it to check how far a heuristic really is on a small instance. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled set, last job). Weighted tardiness with sequence-dependent setups is NP-hard, so this is exponential: it REFUSES more than 16 jobs with an error naming the heuristic to use instead, rather than running for hours. Use it to check how far a heuristic really is on a small instance. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_exact([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
 ## anofox_optimize_schedule_local_search
 
-`anofox_optimize_schedule_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_local_search([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
@@ -338,25 +338,25 @@ Example: `SELECT * FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 'du
 
 ## anofox_optimize_schedule_wspt
 
-`anofox_optimize_schedule_wspt(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
+`anofox_optimize_schedule_wspt(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Sequences jobs by WEIGHTED SHORTEST PROCESSING TIME (priority/processing, descending). Strong when nearly everything will be late, weak when only a few jobs are, because it ignores due dates and setups. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 0-based job order, the total priority-weighted tardiness of that order, and its makespan.
+Sequences jobs by WEIGHTED SHORTEST PROCESSING TIME (priority/processing, descending). Strong when nearly everything will be late, weak when only a few jobs are, because it ignores due dates and setups. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_wspt([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
 ## anofox_optimize_sequence_as_given
 
-`anofox_optimize_sequence_as_given(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
+`anofox_optimize_sequence_as_given(['DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_setup DOUBLE)`
 
-Sequences jobs in the order given, changing nothing. The do-nothing baseline and usually poor; included so a search has a valid option to move away from rather than seeing every member look equally good. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 0-based job order and the total setup cost of that order.
+Sequences jobs in the order given, changing nothing. The do-nothing baseline and usually poor; included so a search has a valid option to move away from rather than seeing every member look equally good. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 1-based job order (items[order[i]] is the i-th job to run) and the total setup cost of that order.
 
 Example: `anofox_optimize_sequence_as_given([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
 
 ## anofox_optimize_sequence_best_of
 
-`anofox_optimize_sequence_best_of(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
+`anofox_optimize_sequence_best_of(['DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_setup DOUBLE)`
 
-Runs every sequencing algorithm in this family and returns whichever had the lowest total setup. Costs the sum of the parts and never loses to any single member. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 0-based job order and the total setup cost of that order.
+Runs every sequencing algorithm in this family and returns whichever had the lowest total setup. Costs the sum of the parts and never loses to any single member. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 1-based job order (items[order[i]] is the i-th job to run) and the total setup cost of that order.
 
 Example: `anofox_optimize_sequence_best_of([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
 
@@ -370,9 +370,9 @@ Example: `SELECT * FROM opt_sequence_by('stops', 'stop', 'distances', algorithms
 
 ## anofox_optimize_sequence_nearest_neighbour
 
-`anofox_optimize_sequence_nearest_neighbour(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
+`anofox_optimize_sequence_nearest_neighbour(['DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_setup DOUBLE)`
 
-Sequences jobs by repeatedly jumping to the cheapest unvisited successor, starting from job 0. Fast and usually far better than the given order; its classic failure is stranding an expensive job until last, which it cannot then undo. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 0-based job order and the total setup cost of that order.
+Sequences jobs by repeatedly jumping to the cheapest unvisited successor, starting from job 0. Fast and usually far better than the given order; its classic failure is stranding an expensive job until last, which it cannot then undo. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 1-based job order (items[order[i]] is the i-th job to run) and the total setup cost of that order.
 
 Example: `anofox_optimize_sequence_nearest_neighbour([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
 
@@ -386,9 +386,9 @@ Example: `SELECT * FROM opt_sequence_objectives_by('stops', 'stop', 'distances')
 
 ## anofox_optimize_sequence_two_opt
 
-`anofox_optimize_sequence_two_opt(['DOUBLE[]', BIGINT])` -> `STRUCT("order" UBIGINT[], total_setup DOUBLE)`
+`anofox_optimize_sequence_two_opt(['DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_setup DOUBLE)`
 
-Sequences jobs by nearest-neighbour and then improves with 2-OPT: reverses any segment whose reversal lowers total setup, until none does. The member that can escape a bad greedy start, at O(n^2) per improving pass. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 0-based job order and the total setup cost of that order.
+Sequences jobs by nearest-neighbour and then improves with 2-OPT: reverses any segment whose reversal lowers total setup, until none does. The member that can escape a bad greedy start, at O(n^2) per improving pass. `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of running job j immediately after job i. Returns a 1-based job order (items[order[i]] is the i-th job to run) and the total setup cost of that order.
 
 Example: `anofox_optimize_sequence_two_opt([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0], 3)`
 
@@ -402,7 +402,7 @@ Example: `anofox_optimize_version()`
 
 ## anofox_optimize_wave_as_given
 
-`anofox_optimize_wave_as_given(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
+`anofox_optimize_wave_as_given(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
 Batches orders into capacity-bounded waves in the order given. The do-nothing baseline and usually poor; included so a search has a valid option to move away from. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 
@@ -410,7 +410,7 @@ Example: `anofox_optimize_wave_as_given([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
 ## anofox_optimize_wave_best_of
 
-`anofox_optimize_wave_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
+`anofox_optimize_wave_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
 Runs every batching algorithm in this family and returns whichever had the lowest priority-weighted mean wave. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 
@@ -426,7 +426,7 @@ Example: `SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'priority', 4
 
 ## anofox_optimize_wave_fewest_waves
 
-`anofox_optimize_wave_fewest_waves(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
+`anofox_optimize_wave_fewest_waves(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
 Batches largest orders first, minimising the NUMBER of waves rather than the weighted mean wave. Kept deliberately: it optimizes the wrong quantity for this objective, and shows what that costs. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 
@@ -442,7 +442,7 @@ Example: `SELECT * FROM opt_wave_objectives_by('orders', 'order_id', 'lines', 'p
 
 ## anofox_optimize_wave_priority_density
 
-`anofox_optimize_wave_priority_density(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
+`anofox_optimize_wave_priority_density(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
 Batches by highest priority PER UNIT OF WORK, since an urgent order that fills a whole wave delays everything behind it. Usually beats plain priority-first when order sizes vary widely. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 
@@ -450,7 +450,7 @@ Example: `anofox_optimize_wave_priority_density([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0
 
 ## anofox_optimize_wave_priority_first
 
-`anofox_optimize_wave_priority_first(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave UBIGINT[], avg_weighted_wave DOUBLE)`
+`anofox_optimize_wave_priority_first(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
 Batches HIGHEST PRIORITY FIRST, so urgent orders land in early waves. Directly targets the weighted-wave objective; can waste capacity when an urgent order is also large. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
 

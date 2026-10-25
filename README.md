@@ -38,6 +38,9 @@ and nothing else.
 Every function has a short `opt_` alias: `anofox_optimize_pack_best_of` and
 `opt_pack_best_of` are the same function.
 
+Every index a function returns (a bin, a wave, a position in an order) is a
+1-based BIGINT, as in SQL: `items[result.order[k]]` is the *k*-th item.
+
 `opt_*_best_of` runs every algorithm in its family and returns the winner.
 Start there.
 
@@ -109,8 +112,10 @@ SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 
     setup_data := 'changeovers', algorithms := ['edd', 'wspt', 'best_of']) t;
 ```
 
-- **Bins and waves start at 1** in the long form, unlike the scalar `pack_*`, whose
-  bins start at 0.
+- **Bins, waves and positions start at 1**, as everywhere in SQL (and in the scalar
+  solvers since v2026.10.26).
+- **`row_order`** (the last column of every producer) numbers the rows 1..n in the
+  producer's own order, so a consumer can keep it: `list(t ORDER BY t.row_order)`.
 - **`group_col` splits the rows into instances**, e.g. one packing per warehouse.
   In a schedule each group is a machine: one lane of the Gantt chart. The assignment
   plot does not separate groups, so plot packings and waves one group at a time

@@ -59,10 +59,15 @@ Every producer exists as `anofox_optimize_*` and as `opt_*`.
 
 ### Decisions
 
-- **Bins are 1-based in the long form.** `pack_*` numbers bins from 0 and
-  `wave_*` numbers waves from 1 (#7). The scalar solvers keep their bases.
-  In the long form both start at 1 (`bin 1` is the first container), so the
-  two `assignment` producers agree.
+- **Every index is 1-based, the SQL convention** (#7). Since v2026.10.26
+  this holds for the scalar solvers too: bins, waves and orders are BIGINT and
+  start at 1, so `items[order[k]]` works directly in SQL. The long forms pass
+  them through unchanged.
+- **`row_order`** (anofox-statistics#242, anofox-visualization#445) is the last
+  column of every producer. It is a BIGINT numbering the whole table 1..n in
+  the producer's own `ORDER BY`. `anofox_plot_*` sorts rows by their struct,
+  so this column is what keeps the producer's order (e.g. a schedule by
+  position). The same spec is used in anofox-decide and anofox-tabfm.
 - **`item` / `task` are the user's ids, with their own type.** The input
   column is renamed to the contract's name; nothing is cast to text.
 - **The schedule's times follow the solver's model.** A job's setup (from

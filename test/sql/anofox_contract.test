@@ -140,7 +140,7 @@ query I
 WITH s AS (SELECT site, list(carton ORDER BY carton) AS items,
                   opt_pack_first_fit_decreasing(list(size::DOUBLE ORDER BY carton), 10.0) AS r
            FROM cartons GROUP BY site),
-     want AS (SELECT site, unnest(items) AS item, unnest(r.assignment) + 1 AS bin FROM s)
+     want AS (SELECT site, unnest(items) AS item, unnest(r.assignment) AS bin FROM s)
 SELECT count(*) FROM want
 FULL JOIN (FROM opt_pack_by('cartons', 'carton', 'size', 10.0, group_col := 'site',
                             algorithms := ['first_fit_decreasing'])) got
@@ -274,7 +274,7 @@ WITH m AS (SELECT opt_matrix_from_triples(list(coalesce(from_id + 1, 0)), list(t
            FROM line)
 SELECT (SELECT list(task ORDER BY position) FROM opt_schedule_by('line', 'job', 'p', 'due', 'w',
             setup_data := 'line_setups', algorithms := ['atcs']))
-       = (SELECT list(o) FROM (SELECT unnest(r."order")::BIGINT AS o FROM s));
+       = (SELECT [o - 1 FOR o IN r."order"] FROM s);
 ----
 true
 

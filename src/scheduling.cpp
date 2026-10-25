@@ -343,7 +343,7 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
                                   Schedule (*fn)(const Instance &), const string &description,
                                   const string &example, const string &alias_of) {
 	auto return_type =
-	    LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::UBIGINT)},
+	    LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::BIGINT)},
 	                         {"total_weighted_tardiness", LogicalType::DOUBLE},
 	                         {"makespan", LogicalType::DOUBLE}});
 	ScalarFunction function(
@@ -405,9 +405,10 @@ static void AddSchedulingFunction(ExtensionLoader &loader, const string &name,
 			    order_out[row].offset = offset;
 			    order_out[row].length = s.order.size();
 			    ListVector::Reserve(order_vec, offset + s.order.size());
-			    auto child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(order_vec));
+			    auto child = duckdb_compat::FlatData<int64_t>(ListVector::GetEntry(order_vec));
 			    for (idx_t i = 0; i < s.order.size(); i++) {
-				    child[offset + i] = s.order[i];
+				    // 1-based, the SQL convention: jobs[order[i]] is the i-th job to run.
+				    child[offset + i] = static_cast<int64_t>(s.order[i] + 1);
 			    }
 			    offset += s.order.size();
 		    }
@@ -433,7 +434,7 @@ void RegisterSchedulingFunctions(ExtensionLoader &loader) {
 	    " Takes processing_times, due_dates and priorities (one per job) plus the "
 	    "setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL "
 	    "START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row "
-	    "0 is the cost of running a job first. Returns a 0-based job order, the total "
+	    "0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total "
 	    "priority-weighted tardiness of that order, and its makespan.";
 	const string ex = "([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)";
 

@@ -115,7 +115,7 @@ Sequence BestOfSequence(const vector<double> &m, idx_t n) {
 static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
                                   Sequence (*fn)(const vector<double> &, idx_t),
                                   const string &description, const string &example, const string &alias_of) {
-	auto return_type = LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::UBIGINT)},
+	auto return_type = LogicalType::STRUCT({{"order", LogicalType::LIST(LogicalType::BIGINT)},
 	                                        {"total_setup", LogicalType::DOUBLE}});
 
 	ScalarFunction function(
@@ -197,9 +197,10 @@ static void AddSequencingFunction(ExtensionLoader &loader, const string &name,
 			    order_out[row].offset = order_offset;
 			    order_out[row].length = seq.order.size();
 			    ListVector::Reserve(order_vec, order_offset + seq.order.size());
-			    auto order_child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(order_vec));
+			    auto order_child = duckdb_compat::FlatData<int64_t>(ListVector::GetEntry(order_vec));
 			    for (idx_t i = 0; i < seq.order.size(); i++) {
-				    order_child[order_offset + i] = seq.order[i];
+				    // 1-based, the SQL convention: items[order[i]] is the i-th item to run.
+				    order_child[order_offset + i] = static_cast<int64_t>(seq.order[i] + 1);
 			    }
 			    order_offset += seq.order.size();
 		    }
@@ -223,7 +224,7 @@ static void AddSequencingFamily(ExtensionLoader &loader, const string &short_nam
 void RegisterSequencingFunctions(ExtensionLoader &loader) {
 	const string matrix_note =
 	    " `setup` is the n*n matrix flattened ROW-MAJOR: setup[i*n+j] is the cost of "
-	    "running job j immediately after job i. Returns a 0-based job order and the "
+	    "running job j immediately after job i. Returns a 1-based job order (items[order[i]] is the i-th job to run) and the "
 	    "total setup cost of that order.";
 	AddSequencingFamily(
 	    loader, "sequence_as_given", AsGiven,

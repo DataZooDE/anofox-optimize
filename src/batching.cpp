@@ -157,7 +157,7 @@ vector<double> ReadDoubles(Vector &v, idx_t count, idx_t row, const char *what, 
 static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
                                 Waves (*fn)(const vector<double> &, const vector<double> &, double),
                                 const string &description, const string &example, const string &alias_of) {
-	auto return_type = LogicalType::STRUCT({{"wave", LogicalType::LIST(LogicalType::UBIGINT)},
+	auto return_type = LogicalType::STRUCT({{"wave", LogicalType::LIST(LogicalType::BIGINT)},
 	                                        {"avg_weighted_wave", LogicalType::DOUBLE}});
 	ScalarFunction function(
 	    duckdb_compat::FunctionName(name),
@@ -211,9 +211,9 @@ static void AddBatchingFunction(ExtensionLoader &loader, const string &name,
 			    wave_out[row].offset = offset;
 			    wave_out[row].length = w.wave.size();
 			    ListVector::Reserve(wave_vec, offset + w.wave.size());
-			    auto child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(wave_vec));
+			    auto child = duckdb_compat::FlatData<int64_t>(ListVector::GetEntry(wave_vec));
 			    for (idx_t i = 0; i < w.wave.size(); i++) {
-				    child[offset + i] = w.wave[i];
+				    child[offset + i] = static_cast<int64_t>(w.wave[i]);
 			    }
 			    offset += w.wave.size();
 		    }

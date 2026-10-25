@@ -151,7 +151,7 @@ void RegisterMatrixFunctions(ExtensionLoader &loader) {
 	    "and portfolio functions expect, from (from, to, value) TRIPLES — which is how "
 	    "the data is usually stored. Missing cells are 0; duplicate cells RAISE rather "
 	    "than silently keeping the last one. `index_base` is subtracted from the ids, so "
-	    "pass 1 for 1-based ids and 0 for 0-based. Use with list aggregation, e.g. "
+	    "pass 1 for ids numbered from 1 and 0 for ids numbered from 0. Use with list aggregation, e.g. "
 	    "`SELECT anofox_optimize_matrix_from_triples(list(a), list(b), list(v), 8, 1) FROM t`.";
 
 	const auto make = [&](const string &name) {

@@ -237,15 +237,16 @@ std::string Prefix(const std::string &fn, const Rows &r) {
 // The objectives: one summary row per (group, algorithm, metric) from `metrics` (names) and `values` (DOUBLE
 // expressions over `from`, a relation with _g and model_id).
 std::string Objectives(const std::string &names, const std::string &values, const std::string &from) {
-	return "SELECT {gout}model_id, unnest([" + names + "]) AS metric, unnest([" + values +
-	       "]) AS value, NULL::DOUBLE AS conf_low, NULL::DOUBLE AS conf_high FROM " + from +
-	       " ORDER BY _g, model_id, metric";
+	return "SELECT {gout}model_id, metric, value, conf_low, conf_high, row_number() OVER (ORDER BY _g, model_id, "
+	       "metric) AS row_order FROM (SELECT _g, model_id, unnest([" +
+	       names + "]) AS metric, unnest([" + values +
+	       "]) AS value, NULL::DOUBLE AS conf_low, NULL::DOUBLE AS conf_high FROM " + from + ") ORDER BY row_order";
 }
 
 // The schedule along each solver order: job _k (1-based) at _pos, its setup from the previous job (_prev, 0
 // = the start), and its end, the running sum of setups and processing times.
 constexpr const char *SCHEDULE_GANTT =
-    "), _o AS (SELECT _g, model_id, _keys, _ps, _dues, _ws, _m, _n, _r, (unnest(_r.\"order\") + 1)::BIGINT AS _k, "
+    "), _o AS (SELECT _g, model_id, _keys, _ps, _dues, _ws, _m, _n, _r, unnest(_r.\"order\")::BIGINT AS _k, "
     "generate_subscripts(_r.\"order\", 1)::BIGINT AS _pos FROM _sol), "
     "_o2 AS (SELECT *, lag(_k, 1, 0) OVER (PARTITION BY _g, model_id ORDER BY _pos) AS _prev FROM _o), "
     "_gantt AS (SELECT *, _m[_prev * (_n + 1) + _k + 1] AS _su, _ps[_k] AS _pk, "
@@ -254,7 +255,7 @@ constexpr const char *SCHEDULE_GANTT =
 
 // A sequence is an open path: the first item has no setup, each next one the setup from the item before.
 constexpr const char *SEQUENCE_PATH =
-    "), _o AS (SELECT _g, model_id, _keys, _m, _n, (unnest(_r.\"order\") + 1)::BIGINT AS _k, "
+    "), _o AS (SELECT _g, model_id, _keys, _m, _n, unnest(_r.\"order\")::BIGINT AS _k, "
     "generate_subscripts(_r.\"order\", 1)::BIGINT AS _pos FROM _sol), "
     "_o2 AS (SELECT *, coalesce(_m[(lag(_k) OVER (PARTITION BY _g, model_id ORDER BY _pos) - 1) * _n + _k], 0) "
     "AS _su FROM _o) ";
@@ -306,9 +307,9 @@ Family Assortment(const char *name, const char *model) {
 	         "substitution_data"},
 	        "SELECT s.*, m._m, '{a}' AS model_id, anofox_optimize_" + family +
 	            "_{a}(s._margins, s._demands, m._m, {i:shelf}) AS _r FROM _s s JOIN _mx m ON s._g IS NOT DISTINCT FROM m._g",
-	        ") SELECT {gout}model_id, item, margin, demand, listed FROM (SELECT _g, model_id, unnest(_keys) AS item, "
-	        "unnest(_margins) AS margin, unnest(_demands) AS demand, unnest(_r.listed) AS listed FROM _sol) "
-	        "ORDER BY _g, model_id, item",
+	        ") SELECT {gout}model_id, item, margin, demand, listed, row_number() OVER (ORDER BY _g, model_id, item) "
+	        "AS row_order FROM (SELECT _g, model_id, unnest(_keys) AS item, unnest(_margins) AS margin, "
+	        "unnest(_demands) AS demand, unnest(_r.listed) AS listed FROM _sol) ORDER BY row_order",
 	        ") " + Objectives("'captured_margin', 'items_listed'",
 	                          "_r.captured_margin, len([x FOR x IN _r.listed IF x])::DOUBLE", "_sol"),
 	        nullptr,
@@ -339,9 +340,9 @@ vector<Family> Families() {
 	     {"data", "item_col", "size_col", "capacity", "group_col", "algorithms"},
 	     {"item_col", "item", false, {{"size_col", "_sizes"}}, Pairs::NONE, nullptr},
 	     "SELECT *, '{a}' AS model_id, anofox_optimize_pack_{a}(_sizes, {n:capacity}) AS _r FROM _s",
-	     ") SELECT {gout}model_id, bin, item, size, capacity FROM (SELECT _g, model_id, "
-	     "(unnest(_r.assignment) + 1)::BIGINT AS bin, unnest(_keys) AS item, unnest(_sizes) AS size, "
-	     "{n:capacity} AS capacity FROM _sol) ORDER BY _g, model_id, bin, item",
+	     ") SELECT {gout}model_id, bin, item, size, capacity, row_number() OVER (ORDER BY _g, model_id, bin, item) "
+	     "AS row_order FROM (SELECT _g, model_id, unnest(_r.assignment)::BIGINT AS bin, unnest(_keys) AS item, "
+	     "unnest(_sizes) AS size, {n:capacity} AS capacity FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'bins_used'", "_r.bins_used::DOUBLE", "_sol"),
 	     "assignment",
 	     "Table macro: bin packing as one row per item (the anofox integration contract's `assignment` schema, for "
@@ -362,9 +363,9 @@ vector<Family> Families() {
 	     {"data", "item_col", "size_col", "priority_col", "capacity", "group_col", "algorithms"},
 	     {"item_col", "item", false, {{"size_col", "_sizes"}, {"priority_col", "_prios"}}, Pairs::NONE, nullptr},
 	     "SELECT *, '{a}' AS model_id, anofox_optimize_wave_{a}(_sizes, _prios, {n:capacity}) AS _r FROM _s",
-	     ") SELECT {gout}model_id, wave, item, size, capacity, priority FROM (SELECT _g, model_id, "
-	     "unnest(_r.wave)::BIGINT AS wave, unnest(_keys) AS item, unnest(_sizes) AS size, {n:capacity} AS capacity, "
-	     "unnest(_prios) AS priority FROM _sol) ORDER BY _g, model_id, wave, item",
+	     ") SELECT {gout}model_id, wave, item, size, capacity, priority, row_number() OVER (ORDER BY _g, model_id, "
+	     "wave, item) AS row_order FROM (SELECT _g, model_id, unnest(_r.wave)::BIGINT AS wave, unnest(_keys) AS item, "
+	     "unnest(_sizes) AS size, {n:capacity} AS capacity, unnest(_prios) AS priority FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'avg_weighted_wave', 'waves_used'",
 	                       "_r.avg_weighted_wave, coalesce(list_max(_r.wave), 0)::DOUBLE", "_sol"),
 	     "assignment",
@@ -397,7 +398,7 @@ vector<Family> Families() {
 	         "SELECT {gout}model_id, {res} AS resource, _keys[_k] AS task, _pos AS position, _end - _pk AS start, "
 	         "_end AS \"end\", _su AS setup, _pk AS processing, _dues[_k] AS due, _ws[_k] AS priority, "
 	         "greatest(_end - _dues[_k], 0) AS tardiness, CASE WHEN _end > _dues[_k] THEN 'late' ELSE 'on time' END "
-	         "AS status FROM _gantt ORDER BY _g, model_id, _pos",
+	         "AS status, row_number() OVER (ORDER BY _g, model_id, _pos) AS row_order FROM _gantt ORDER BY row_order",
 	     std::string(SCHEDULE_GANTT) +
 	         Objectives("'late_jobs', 'makespan', 'total_weighted_tardiness'", "_late, _mk, _twt",
 	                    "(SELECT _g, model_id, count(*) FILTER (WHERE _end > _dues[_k])::DOUBLE AS _late, "
@@ -426,9 +427,9 @@ vector<Family> Families() {
 	     {"data", "item_col", "value_col", "weight_col", "capacity", "group_col", "algorithms"},
 	     {"item_col", "item", true, {{"value_col", "_vals"}, {"weight_col", "_wts"}}, Pairs::NONE, nullptr},
 	     "SELECT *, '{a}' AS model_id, anofox_optimize_knapsack_{a}(_vals, _wts, {n:capacity}) AS _r FROM _s",
-	     ") SELECT {gout}model_id, item, value, weight, selected, capacity FROM (SELECT _g, model_id, "
-	     "unnest(_keys) AS item, unnest(_vals) AS value, unnest(_wts) AS weight, unnest(_r.selected) AS selected, "
-	     "{n:capacity} AS capacity FROM _sol) ORDER BY _g, model_id, item",
+	     ") SELECT {gout}model_id, item, value, weight, selected, capacity, row_number() OVER (ORDER BY _g, model_id, "
+	     "item) AS row_order FROM (SELECT _g, model_id, unnest(_keys) AS item, unnest(_vals) AS value, unnest(_wts) "
+	     "AS weight, unnest(_r.selected) AS selected, {n:capacity} AS capacity FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'items_selected', 'total_value', 'total_weight'",
 	                       "len([x FOR x IN _r.selected IF x])::DOUBLE, _r.total_value, _r.total_weight", "_sol"),
 	     nullptr,
@@ -452,7 +453,8 @@ vector<Family> Families() {
 	     "FROM _s s JOIN _mx m ON s._g IS NOT DISTINCT FROM m._g",
 	     std::string(SEQUENCE_PATH) +
 	         "SELECT {gout}model_id, _pos AS position, _keys[_k] AS item, _su AS setup, sum(_su) OVER (PARTITION BY _g, "
-	         "model_id ORDER BY _pos ROWS UNBOUNDED PRECEDING) AS cumulative_setup FROM _o2 ORDER BY _g, model_id, _pos",
+	         "model_id ORDER BY _pos ROWS UNBOUNDED PRECEDING) AS cumulative_setup, row_number() OVER (ORDER BY _g, "
+	         "model_id, _pos) AS row_order FROM _o2 ORDER BY row_order",
 	     ") " + Objectives("'total_setup'", "_r.total_setup", "_sol"),
 	     nullptr,
 	     "Table macro: a sequence as one row per item in run order: the group column, model_id (the algorithm), "
@@ -476,8 +478,9 @@ vector<Family> Families() {
 	     {"item_col", "asset", true, {{"return_col", "_rets"}}, Pairs::SYMMETRIC, "covariance_data"},
 	     "SELECT s.*, m._m, '{a}' AS model_id, anofox_optimize_portfolio_{a}(s._rets, m._m, {i:max_holdings}, "
 	     "{n:weight_cap}) AS _r FROM _s s JOIN _mx m ON s._g IS NOT DISTINCT FROM m._g",
-	     ") SELECT {gout}model_id, item, expected_return, weight FROM (SELECT _g, model_id, unnest(_keys) AS item, "
-	     "unnest(_rets) AS expected_return, unnest(_r.weights) AS weight FROM _sol) ORDER BY _g, model_id, item",
+	     ") SELECT {gout}model_id, item, expected_return, weight, row_number() OVER (ORDER BY _g, model_id, item) "
+	     "AS row_order FROM (SELECT _g, model_id, unnest(_keys) AS item, unnest(_rets) AS expected_return, "
+	     "unnest(_r.weights) AS weight FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'expected_return', 'holdings', 'sharpe', 'volatility'",
 	                       "_r.expected_return, len([x FOR x IN _r.weights IF x > 0])::DOUBLE, _r.sharpe, "
 	                       "_r.volatility",
