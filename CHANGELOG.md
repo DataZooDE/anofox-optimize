@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## v2026.10.25
+
+optimize joins the anofox integration contract: decisions plot in anofox-visualization with `anofox_plot(t)`.
+The community build also returns for DuckDB v1.5.6 (#8).
 
 ### Added
 
