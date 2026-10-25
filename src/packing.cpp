@@ -377,8 +377,8 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
                                Packing (*fn)(const vector<double> &, double),
                                const string &description, const string &example, const string &alias_of) {
 	auto return_type =
-	    LogicalType::STRUCT({{"bins_used", LogicalType::UBIGINT},
-	                         {"assignment", LogicalType::LIST(LogicalType::UBIGINT)}});
+	    LogicalType::STRUCT({{"bins_used", LogicalType::BIGINT},
+	                         {"assignment", LogicalType::LIST(LogicalType::BIGINT)}});
 
 	ScalarFunction function(
 	    duckdb_compat::FunctionName(name), {LogicalType::LIST(LogicalType::DOUBLE), LogicalType::DOUBLE}, return_type,
@@ -401,7 +401,7 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 		    auto child_values = UnifiedVectorFormat::GetData<double>(child_data);
 
 		    auto &struct_entries = StructVector::GetEntries(result);
-		    auto bins_out = duckdb_compat::FlatData<uint64_t>(duckdb_compat::StructChild(struct_entries[0]));
+		    auto bins_out = duckdb_compat::FlatData<int64_t>(duckdb_compat::StructChild(struct_entries[0]));
 		    auto &assign_vec = duckdb_compat::StructChild(struct_entries[1]);
 		    auto assign_out = duckdb_compat::FlatData<list_entry_t>(assign_vec);
 		    idx_t assign_offset = 0;
@@ -469,13 +469,14 @@ static void AddPackingFunction(ExtensionLoader &loader, const string &name,
 			    }
 
 			    const auto packing = fn(sizes, capacity);
-			    bins_out[row] = packing.bins_used;
+			    bins_out[row] = static_cast<int64_t>(packing.bins_used);
 			    assign_out[row].offset = assign_offset;
 			    assign_out[row].length = packing.assignment.size();
 			    ListVector::Reserve(assign_vec, assign_offset + packing.assignment.size());
-			    auto assign_child = duckdb_compat::FlatData<uint64_t>(ListVector::GetEntry(assign_vec));
+			    auto assign_child = duckdb_compat::FlatData<int64_t>(ListVector::GetEntry(assign_vec));
 			    for (idx_t i = 0; i < packing.assignment.size(); i++) {
-				    assign_child[assign_offset + i] = packing.assignment[i];
+				    // 1-based, the SQL convention: list[1] is the first element.
+				    assign_child[assign_offset + i] = static_cast<int64_t>(packing.assignment[i] + 1);
 			    }
 			    assign_offset += packing.assignment.size();
 		    }
@@ -512,7 +513,7 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "Packs items into bins by first-fit-decreasing: sorts items largest first and "
 	    "puts each into the first bin it fits. Fast and near-optimal on typical "
 	    "instances, but provably up to 11/9 of optimal and weak on triplet-style "
-	    "instances. Returns bins_used and a 0-based bin index per input item. An "
+	    "instances. Returns bins_used and a 1-based bin number per input item. An "
 	    "empty item list uses 0 bins; a non-empty list of zero-size items uses 1.",
 	    "pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(

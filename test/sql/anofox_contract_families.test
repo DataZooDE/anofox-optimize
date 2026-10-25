@@ -58,6 +58,7 @@ value	DOUBLE
 weight	DOUBLE
 selected	BOOLEAN
 capacity	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_sequence_by('stops', 'stop', 'dist', group_col := 'stop'));
@@ -68,6 +69,7 @@ position	BIGINT
 item	VARCHAR
 setup	DOUBLE
 cumulative_setup	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_assortment_by('prods', 'sku', 'margin', 'demand', 'subst', 2));
@@ -77,6 +79,7 @@ item	INTEGER
 margin	DOUBLE
 demand	DOUBLE
 listed	BOOLEAN
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_assortment_recapture_by('prods', 'sku', 'margin', 'demand', 'subst', 2));
@@ -86,6 +89,7 @@ item	INTEGER
 margin	DOUBLE
 demand	DOUBLE
 listed	BOOLEAN
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_portfolio_by('assets', 'ticker', 'ret', 'cov', 2, 0.6));
@@ -94,6 +98,7 @@ model_id	VARCHAR
 item	VARCHAR
 expected_return	DOUBLE
 weight	DOUBLE
+row_order	BIGINT
 
 query TT
 SELECT column_name, column_type FROM (DESCRIBE SELECT * FROM opt_portfolio_objectives_by('assets', 'ticker', 'ret', 'cov', 2, 0.6));
@@ -103,6 +108,7 @@ metric	VARCHAR
 value	DOUBLE
 conf_low	DOUBLE
 conf_high	DOUBLE
+row_order	BIGINT
 
 # ── knapsack ─────────────────────────────────────────────────────────────────
 
@@ -163,7 +169,7 @@ WITH m AS (SELECT opt_matrix_from_triples(list(from_id), list(to_id), list(value
      s AS (SELECT opt_sequence_two_opt((FROM m), 16) AS r)
 SELECT (SELECT list(item ORDER BY position) FROM opt_sequence_by('many', 'item',
             '(SELECT from_id, to_id, value FROM many_pairs)', algorithms := ['two_opt']))
-       = (SELECT list(o) FROM (SELECT unnest(r."order")::BIGINT AS o FROM s));
+       = (SELECT [o - 1 FOR o IN r."order"] FROM s);
 ----
 true
 
@@ -310,3 +316,11 @@ query I
 SELECT count(*) FROM duckdb_functions() WHERE tags['anofox.contract'] = '1';
 ----
 22
+
+query I
+WITH t AS (FROM opt_sequence_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)', group_col := 'my group',
+                                algorithms := ['as_given', 'two_opt']))
+SELECT list(row_order ORDER BY row_order) = range(1, count(*) + 1)::BIGINT[]
+   AND list(item ORDER BY row_order) = list(item ORDER BY "my group", model_id, position) FROM t;
+----
+true

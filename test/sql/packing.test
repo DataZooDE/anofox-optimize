@@ -118,7 +118,7 @@ SELECT opt_pack_first_fit_decreasing([]::DOUBLE[], 10.0).bins_used;
 # a member that quietly returns an infeasible packing would simply win —
 # so every member must satisfy every invariant on an adversarial case.
 #
-# Invariants: exactly one assignment per item; every bin id < bins_used;
+# Invariants: exactly one assignment per item; every bin in 1..bins_used;
 # no bin over capacity.
 statement ok
 CREATE TABLE adversarial AS
@@ -149,10 +149,10 @@ WHERE r.assignment[i] IS NULL;
 ----
 0
 
-# Every bin id is within range.
+# Every bin is within 1..bins_used (1-based, the SQL convention).
 query I
 SELECT count(*) FROM results, generate_series(1, len(sizes)) g(i)
-WHERE r.assignment[i] >= r.bins_used;
+WHERE r.assignment[i] < 1 OR r.assignment[i] > r.bins_used;
 ----
 0
 

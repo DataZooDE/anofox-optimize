@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- **Every index is a 1-based BIGINT, the SQL convention** (#7):
+  - `pack_*` bins: `assignment` now runs 1..`bins_used`; it was 0-based;
+  - `sequence_*` and `schedule_*`: the `order` lists are 1-based positions, so `items[order[k]]` is the
+    *k*-th item; they were 0-based;
+  - `wave_*` was already 1-based, and `avg_weighted_wave` is unchanged;
+  - the index lists and `bins_used` are `BIGINT` instead of `UBIGINT`, so they can index a list directly.
+    DuckDB has no implicit `UBIGINT` → `BIGINT` cast for that.
+
+  Callers that added 1 to present a bin, or looked up `items[order[k] + 1]`, must drop the `+ 1`.
+  `matrix_from_triples(…, index_base)` and the matrix layouts are unchanged, including the schedule
+  matrix's row 0 for the virtual start.
+
+### Added
+
+- **`row_order`**, the last column of every `*_by` / `*_objectives_by` producer: a BIGINT numbering the
+  table 1..n in the producer's own order (anofox-statistics#242). `anofox_plot_*` sorts rows, and this
+  column lets a consumer keep the producer's order.
+
 ## v2026.10.25
 
 optimize joins the anofox integration contract: decisions plot in anofox-visualization with `anofox_plot(t)`.

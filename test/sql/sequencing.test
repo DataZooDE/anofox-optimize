@@ -44,7 +44,7 @@ SELECT count(*) FROM (
     SELECT opt_sequence_two_opt(setup, n) AS r, setup, n FROM m
   )
 ) t, LATERAL (
-  SELECT sum(setup[CAST(o[i] * n + o[i+1] + 1 AS BIGINT)]) AS actual
+  SELECT sum(setup[(o[i] - 1) * n + o[i+1]]) AS actual
   FROM generate_series(1, n-1) g(i)
 ) s
 WHERE abs(claimed - actual) > 1e-9;
