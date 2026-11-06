@@ -255,7 +255,10 @@ void RegisterBatchingFunctions(ExtensionLoader &loader) {
 	    " Takes items and priorities (one per order) and a per-wave capacity. Returns a "
 	    "1-based wave number per order and the priority-weighted mean wave, "
 	    "sum(wave*priority)/sum(priority) — lower is better. A wave fits when its "
-	    "items, summed in input order in doubles, are at most the capacity.";
+	    "items, summed in input order in doubles, are at most the capacity; the repair "
+	    "that enforces this may move an order into an EARLIER wave than the algorithm "
+	    "placed it, so it can ship sooner, and avg_weighted_wave is computed from the "
+	    "waves returned.";
 	const string ex = "([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)";
 
 	AddBatchingFamily(loader, "wave_as_given", AsGiven,

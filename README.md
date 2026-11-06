@@ -27,7 +27,7 @@ and nothing else.
 | Family | Decision | Example function |
 |---|---|---|
 | `pack_*` | fit items into fewest containers | `opt_pack_best_of` |
-| `knapsack_*` | pick a subset under one capacity | `opt_knapsack_exact` |
+| `knapsack_*` | pick a subset under one capacity | `opt_knapsack_best_of` |
 | `wave_*` | group orders into capacity-limited waves | `opt_wave_best_of` |
 | `sequence_*` | order jobs to cut changeover cost | `opt_sequence_two_opt` |
 | `schedule_*` | order jobs against due dates with setups | `opt_schedule_best_of` |
@@ -48,10 +48,11 @@ Start there.
 
 Choosing which shipments go on a cheaper but capacity-limited carrier is
 exactly subset-sum. On a 60-shipment instance where a perfect 1000-unit fill
-exists, greedy rules top out at 968 — the exact solver finds the perfect fill:
+exists, greedy rules top out at 968 — `best_of`'s dynamic program finds the
+perfect fill:
 
 ```sql
-SELECT opt_knapsack_exact(
+SELECT opt_knapsack_best_of(
          list(weight ORDER BY shipment_id),   -- value == weight: savings scale with weight
          list(weight ORDER BY shipment_id),
          1000.0
@@ -62,12 +63,13 @@ FROM shipments;
 
 ## Honesty about guarantees
 
-Two functions return a **proven optimum** and say so in their names:
-`knapsack_exact` and `schedule_exact`. Knapsack's guarantee needs weights in
-multiples of 0.0001 whose sums are exact in doubles (a selection fits when its
-weights, summed in doubles, are within capacity, so 0.1 + 0.2 does not fit
-0.3) and a table within its limits, and `knapsack_best_of` is
-exact only inside those limits; see
+`schedule_exact` returns a **proven optimum** and refuses what it cannot
+solve. `knapsack_best_of` (also callable as `knapsack_exact`, an alias)
+returns one only when its dynamic program ran, inside a cell and memory
+limit, with weights in multiples of 0.0001 whose sums are exact in doubles (a
+selection fits when its weights, summed in doubles, are within capacity, so
+0.1 + 0.2 does not fit 0.3). Past the limits it silently returns its best
+greedy answer, and nothing in the result says which case occurred; see
 [docs/theory/02](docs/theory/02-packing-and-knapsack.md#knapsack-knapsack_).
 Everything else is heuristic and comes with no guarantee attached.
 

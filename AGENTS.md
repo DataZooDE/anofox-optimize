@@ -21,6 +21,9 @@ the search cannot explore methods by editing text.
 instances that matter, the family is decorative. Four greedy heuristics
 all returned 12 bins on the triplet instance; `bin_completion` returning
 11 is what makes the family worth exposing. Check spread when adding one.
+A member that matches another on every instance is merged into it as an
+alias: `knapsack_exact` always returned `knapsack_best_of`'s value inside
+its limits, so it is now an alias of `best_of`.
 
 **Include a deliberately weak member.** A search needs a poor-but-valid
 option to move away from — hence `opt_pack_next_fit`.

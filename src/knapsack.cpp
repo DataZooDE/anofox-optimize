@@ -165,11 +165,6 @@ public:
 		}
 		return bytes;
 	}
-	//! The setting as the user wrote it, for error messages; set by Bytes().
-	const string &AsSet() const {
-		return as_set;
-	}
-
 private:
 	ClientContext &context;
 	string as_set;
@@ -228,17 +223,13 @@ Selection BestGreedy(const vector<double> &values, const vector<double> &weights
 	return by_value.total_value > best.total_value ? by_value : best;
 }
 
-//! Largest DP table this will build, in cells (a time bound). Beyond it the
-//! exact member REFUSES rather than silently degrading to a heuristic: a
-//! caller who asked for the exact answer and got a greedy one, with no
-//! signal, cannot tell that its result is no longer a bound. best_of shares
-//! the same limit, but falls back to its greedy members instead of raising.
+//! Largest DP table this will build, in cells (a time bound). Beyond it
+//! best_of falls back to its greedy members.
 constexpr idx_t MAX_DP_CELLS = 50u * 1000u * 1000u;
 
 //! How the exact DP sees an instance: the items that can fit at all, their
 //! weights and the capacity in integer units of 1/scale, and whether that
-//! table is within both limits. knapsack_exact raises when it is not,
-//! knapsack_best_of skips the DP.
+//! table is within both limits; knapsack_best_of skips the DP when it is not.
 struct ExactPlan {
 	double scale = 1.0;
 	double cells = 0;
@@ -420,35 +411,6 @@ bool IsLpOptimal(const vector<double> &values, const ExactPlan &plan, const vect
 	return true;
 }
 
-//! Exact, or a refusal naming the limit: a caller who asked for the exact
-//! answer and got a heuristic one cannot tell it is no longer a bound.
-Selection ExactMember(const vector<double> &values, const vector<double> &weights, double capacity,
-                      MemoryBudget &budget) {
-	const auto plan = PlanExact(weights, capacity, budget.Bytes());
-	if (!plan.within_cells) {
-		throw InvalidInputException("exact knapsack needs a %.0f-cell table for %llu items at "
-		                            "capacity %f (weights scaled by %.0f to make them integral), "
-		                            "over the %llu-cell limit. Use opt_knapsack_greedy_ratio for "
-		                            "an approximate answer, or round the weights to coarser units.",
-		                            plan.cells, static_cast<uint64_t>(values.size()), capacity, plan.scale,
-		                            static_cast<uint64_t>(MAX_DP_CELLS));
-	}
-	if (!plan.within_memory) {
-		throw InvalidInputException("exact knapsack needs %s for its table for %llu items at capacity %f "
-		                            "(weights scaled by %.0f to make them integral), over %s = '%s'. "
-		                            "SET %s to a larger size, or use opt_knapsack_greedy_ratio or "
-		                            "opt_knapsack_best_of, which fall back to a greedy answer.",
-		                            StringUtil::BytesToHumanReadableString(static_cast<idx_t>(plan.bytes)),
-		                            static_cast<uint64_t>(values.size()), capacity, plan.scale,
-		                            MAX_MEMORY_SETTING, budget.AsSet(), MAX_MEMORY_SETTING);
-	}
-	// When Fit had to drop an item from the DP's answer, a greedy one may be
-	// worth more; on ties the DP's is kept.
-	auto exact = ExactDP(values, weights, capacity, plan);
-	auto greedy = BestGreedy(values, weights, capacity, budget);
-	return greedy.total_value > exact.total_value ? greedy : exact;
-}
-
 //! The best greedy answer, and the DP's when its table fits and greedy is
 //! not already the LP optimum. Every answer has been through Fit, so each
 //! is within capacity in doubles.
@@ -600,10 +562,10 @@ static void AddKnapsackFamily(ExtensionLoader &loader, const string &short_name,
 void RegisterKnapsackFunctions(ExtensionLoader &loader) {
 	DBConfig::GetConfig(loader.GetDatabaseInstance())
 	    .AddExtensionOption(MAX_MEMORY_SETTING,
-	                        "Largest table, in bytes, that knapsack_exact and knapsack_best_of build for their "
-	                        "dynamic program (e.g. '2GB'). Default '512MB', or '64MB' in DuckDB-Wasm, where "
-	                        "every thread's table comes out of one shared heap. Over it, knapsack_exact raises "
-	                        "and knapsack_best_of returns its best greedy answer.",
+	                        "Largest table, in bytes, that knapsack_best_of (and knapsack_exact, its alias) "
+	                        "builds for its dynamic program, per call (e.g. '2GB'). Default '512MB', or '64MB' "
+	                        "in DuckDB-Wasm, where every thread's table comes out of one shared heap. Over it, "
+	                        "knapsack_best_of returns its best greedy answer without raising.",
 	                        LogicalType::VARCHAR, Value(MAX_MEMORY_DEFAULT), OnMaxMemory);
 	AddKnapsackFamily(
 	    loader, "knapsack_greedy_ratio", GreedyRatio,
@@ -620,52 +582,48 @@ void RegisterKnapsackFunctions(ExtensionLoader &loader) {
 	    "and weight are correlated — and included so a search has a poor-but-valid "
 	    "option to move away from. Same signature as the other knapsack functions.",
 	    "knapsack_greedy_value([10.0, 6.0], [5.0, 4.0], 6.0)");
-	AddKnapsackFamily(
-	    loader, "knapsack_exact", ExactMember,
-	    "0/1 knapsack solved by dynamic programming over integer-scaled weights; it also "
-	    "runs both greedy members and returns the best answer. A selection fits when its "
-	    "weights, summed in item order in doubles, are at most the capacity, with no "
-	    "tolerance; total_weight is that sum (0 for an empty selection). Returns the "
-	    "proven optimum when every weight and the capacity are whole multiples of 0.0001 "
-	    "and their sums are exact in doubles (integers, halves, quarters), unlike the "
-	    "greedy members. Decimal weights such as 0.1 can fill the capacity in 0.0001 "
-	    "units yet sum over it in doubles (0.1 + 0.2 > 0.3); such a DP answer is "
-	    "repaired, by dropping the item that costs least or by the best selection one "
-	    "unit lighter, and may then fall short of the optimum. Weights finer than 0.0001 "
-	    "are rounded UP to the next 0.0001 (and the capacity down) for the DP, which "
-	    "optimizes those rounded weights; there the result carries NO optimality "
-	    "guarantee and can miss a better selection that fits. Items heavier than the "
-	    "capacity are never taken and do not affect the scaling. The table has "
-	    "items * (capacity + 1) cells, counting weights in the smallest unit (1, 0.1, "
-	    "... 0.0001) that makes every item that can fit, and the capacity, whole. It "
-	    "needs 8 bytes per capacity unit plus one bit per cell. RAISES rather than "
-	    "degrading when the table is over 50 million cells or over the memory budget "
-	    "set by anofox_optimize_knapsack_max_memory (default '512MB', '64MB' in "
-	    "DuckDB-Wasm), since a caller who asked for the exact answer and silently "
-	    "received a heuristic one could not tell its result is no longer a bound. "
-	    "Time and memory grow with items * "
-	    "capacity, so near those limits it is far slower than the greedy members. Same "
-	    "signature as the other knapsack functions.",
-	    "knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)");
-	AddKnapsackFamily(
-	    loader, "knapsack_best_of", BestOfKnapsack,
-    "Runs both greedy knapsack members and, when knapsack_exact would accept the "
-    "instance (the same limits: at most 50 million table cells, within "
-    "anofox_optimize_knapsack_max_memory), knapsack_exact's dynamic program too, and "
-    "returns whichever captured the most value. Where the DP runs, the result has "
-    "knapsack_exact's value, guarantee and caveats: it fits by the same strict rule, "
-    "and is the proven optimum only when weights and capacity are whole multiples of "
-    "0.0001 whose sums are exact in doubles. Where knapsack_exact would refuse, "
-    "best_of does NOT raise but silently returns the best greedy answer, which is NOT "
-    "exact and carries no guarantee — call knapsack_exact if you need to know which "
-    "case you are in. The DP's time and memory grow with items * capacity, so near "
-    "the limits it is far slower than the greedy members, and knapsack_by, whose "
-    "default algorithm is best_of, pays that per group. The DP is skipped when greedy "
-    "is provably optimal for the DP's rounded instance (every positive-value item fits, "
-    "nothing fits, or the best-ratio prefix fills the capacity exactly); for weights "
-    "finer than 0.0001 that is not the true optimum. Never loses to any single member. "
-    "Same signature as the other knapsack functions.",
-    "knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)");
+	// knapsack_exact is registered as a TRUE alias of best_of (knapsack_exact
+	// and opt_knapsack_exact both point at the canonical best_of), not as a
+	// member: inside the limits it always returned best_of's value, and a
+	// member that matches another on every instance gives a search nothing to
+	// choose between (AGENTS.md: a family needs spread).
+	const string best_of_description =
+	    "0/1 knapsack: runs both greedy knapsack members and, within the limits below, a "
+	    "dynamic program over integer-scaled weights, and returns whichever captured the "
+	    "most value; never loses to a greedy member. knapsack_exact is an alias of this "
+	    "function. A selection fits when its weights, summed in item order in doubles, "
+	    "are at most the capacity, with no tolerance; total_weight is that sum (0 for an "
+	    "empty selection). Where the DP runs, the result is the proven optimum when every "
+	    "weight and the capacity are whole multiples of 0.0001 and their sums are exact "
+	    "in doubles (integers, halves, quarters). Decimal weights such as 0.1 can fill the "
+	    "capacity in 0.0001 units yet sum over it in doubles (0.1 + 0.2 > 0.3); such a DP "
+	    "answer is repaired, by dropping the item that costs least or by the best "
+	    "selection one unit lighter, and may then fall short of the optimum. Weights "
+	    "finer than 0.0001 are rounded UP to the next 0.0001 (and the capacity down) for "
+	    "the DP, which optimizes those rounded weights; there the result carries NO "
+	    "optimality guarantee and can miss a better selection that fits. The DP is "
+	    "skipped when greedy is provably optimal for the DP's rounded instance (every "
+	    "positive-value item fits, nothing fits, or the best-ratio prefix fills the "
+	    "capacity exactly). LIMITS: the DP runs only when its table, items * (capacity + "
+	    "1) cells counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes "
+	    "every item that can fit and the capacity whole, is at most 50 million cells and "
+	    "its memory, 8 bytes per capacity unit plus one bit per cell, is within "
+	    "anofox_optimize_knapsack_max_memory (default '512MB', '64MB' in DuckDB-Wasm). "
+	    "Past either limit it does NOT raise but silently returns the best greedy answer, "
+	    "which carries no guarantee, and nothing in the result says which case occurred: "
+	    "to rely on the guarantee, keep the instance within those limits (raise the "
+	    "setting or round weights to coarser units). Items heavier than the capacity are "
+	    "never taken and do not affect the scaling. Time and memory grow with items * "
+	    "capacity, so near the limits it is far slower than the greedy members, and "
+	    "knapsack_by, whose default algorithm is best_of, pays that per group. Same "
+	    "signature as the other knapsack functions.";
+	AddKnapsackFamily(loader, "knapsack_best_of", BestOfKnapsack, best_of_description,
+	                  "knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)");
+	AddKnapsackFunction(loader, "anofox_optimize_knapsack_exact", BestOfKnapsack, best_of_description,
+	                    "anofox_optimize_knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)",
+	                    "anofox_optimize_knapsack_best_of");
+	AddKnapsackFunction(loader, "opt_knapsack_exact", BestOfKnapsack, best_of_description,
+	                    "opt_knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)", "anofox_optimize_knapsack_best_of");
 }
 
 } // namespace duckdb

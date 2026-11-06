@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Breaking
+
+- **`knapsack_exact` is now an alias of `knapsack_best_of`** (`anofox_optimize_knapsack_exact` and
+  `opt_knapsack_exact` set `alias_of` to `anofox_optimize_knapsack_best_of` and carry its description), and it
+  **no longer raises past the limits**: over 50 million table cells or over
+  `anofox_optimize_knapsack_max_memory` it returns `best_of`'s best greedy answer, silently, and the "exact
+  knapsack needs …" errors are gone. Why: inside the limits the two always returned the same value (on a
+  1,000-instance sweep they differed only in which of two equally valuable selections a tie kept, on 45 rows),
+  and a member that matches another on every instance gives a search nothing to choose between (AGENTS.md,
+  "a family needs spread"). The proven optimum now holds only where the DP ran, and nothing in the result says
+  whether it did: keep the instance within the limits, or raise the budget, to rely on it. `knapsack_by` still
+  accepts `'exact'`, which returns what `'best_of'` does, so saved algorithm lists keep working.
+
 ### Changed
 
 - **"Fits" in `knapsack_*` is strict in doubles**: the selected weights, summed in item
@@ -18,6 +31,8 @@
   claim optimality, for the rounded weights or otherwise: with values [10, 6, 6], weights
   [0.00008, 0.00006, 0.00006] and capacity 0.00012, `knapsack_exact` and `knapsack_best_of` return 10 while
   {6, 6} fits and is worth 12.
+- **`wave_*` may ship an order sooner**: the item-order repair can move an order into an earlier wave than
+  its algorithm placed it; the descriptions say so, and `avg_weighted_wave` is computed from the waves returned.
 - **`anofox_optimize_knapsack_max_memory` defaults to `'64MB'` in DuckDB-Wasm** (still `'512MB'` natively).
   The DP table is a plain allocation outside DuckDB's buffer manager, and in DuckDB-Wasm every thread
   allocates from one shared 32-bit heap of 2–4 GB, so a few threads' 512MB tables could crash the page.

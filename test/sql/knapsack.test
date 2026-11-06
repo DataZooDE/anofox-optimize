@@ -36,12 +36,19 @@ SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value
 ----
 true
 
-# The exact member REFUSES an instance it cannot solve exactly rather
-# than silently returning a heuristic answer that is no longer a bound.
-statement error
-SELECT opt_knapsack_exact([1.0], [1.0], 1e9);
+# knapsack_exact is an ALIAS of knapsack_best_of: inside the limits the two
+# always returned the same value, so the family had one member twice. Past
+# the limits it no longer raises; it returns best_of's greedy fallback.
+query II
+SELECT opt_knapsack_exact([1.0], [1.0], 1e9) = opt_knapsack_best_of([1.0], [1.0], 1e9),
+       opt_knapsack_exact([1.0], [1.0], 1e9).total_value;
 ----
-over the
+1	1.0
+
+query T
+SELECT alias_of FROM duckdb_functions() WHERE function_name = 'anofox_optimize_knapsack_exact';
+----
+anofox_optimize_knapsack_best_of
 
 # Mismatched inputs, NULLs and nonsense are rejected with a reason.
 statement error
@@ -134,13 +141,14 @@ FROM many_solved JOIN many_brute USING (g);
 ----
 true
 
-# When exact would REFUSE (here a 200M-cell table), best_of does NOT error:
-# it returns the best greedy answer, which is feasible but no longer a bound.
+# Past the cell limit (here a 200M-cell table), best_of does NOT error: it
+# returns the best greedy answer, which is feasible but no longer a bound.
 # by-value wins this instance (10 against 6), so best_of must take the max.
-statement error
-SELECT opt_knapsack_exact([10.0, 6.0], [1e8, 5e7], 1e8);
+# knapsack_exact, its alias, returns the same.
+query I
+SELECT opt_knapsack_exact([10.0, 6.0], [1e8, 5e7], 1e8) = opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8);
 ----
-over the
+1
 
 query RRRR
 SELECT opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8).total_value,
@@ -422,8 +430,7 @@ true	true	1.0
 
 # A sweep mixing ordinary weights (1 to 10) with weights from 1e-20 to 1e20
 # at capacities from 5 to 20: the tiny ones force the 10^4 scale, the huge
-# ones once cast to 0 units there. Every answer fits. exact may refuse an
-# instance (TRY makes that NULL) but never returns one over capacity.
+# ones once cast to 0 units there. Every answer fits.
 statement ok
 CREATE TABLE wild AS
 WITH l AS (
@@ -432,12 +439,12 @@ WITH l AS (
                      ELSE 1 + abs(sin(g * 11 + k)) * 9 END ORDER BY k) AS w,
            any_value(5 + abs(sin(g * 5)) * 15) AS cap
     FROM range(0, 200) a(g), range(0, 9) b(k) GROUP BY g)
-SELECT g, cap, w, TRY(opt_knapsack_exact(v, w, cap)) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+SELECT g, cap, w, opt_knapsack_exact(v, w, cap) AS e, opt_knapsack_best_of(v, w, cap) AS b,
        opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
 FROM l;
 
 query IIII
-SELECT count(*), count(*) FILTER (e IS NULL OR e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
+SELECT count(*), count(*) FILTER (e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
        count(*) FILTER (b.total_value >= greatest(r.total_value, gv.total_value, coalesce(e.total_value, 0)))
 FROM wild;
 ----
@@ -473,27 +480,24 @@ SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value,
 statement ok
 SET anofox_optimize_knapsack_max_memory = '1MB';
 
-# Over the budget, exact refuses and names the setting...
-statement error
-SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5);
+# Over the budget, best_of (and exact, its alias) falls back to the best
+# greedy answer without raising.
+query RR
+SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value,
+       opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
 ----
-anofox_optimize_knapsack_max_memory
-
-# ...and best_of falls back to the best greedy answer without raising.
-query R
-SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
-----
-7.0
+7.0	7.0
 
 # An item heavier than the capacity plays no part in the scaling: at scale 1
-# this table is ~900 bytes, at the 10^4 scale its 123.4567 would force ~8 MB.
+# this table is a few hundred bytes, at the 10^4 scale its 123.4567 would
+# force ~640 KB, over the budget, and the greedy fallback returns 7, not 8.
 statement ok
 SET anofox_optimize_knapsack_max_memory = '1KB';
 
 query R
-SELECT opt_knapsack_exact([9.0, 1.0, 2.0], [123.4567, 1.0, 2.0], 100.0).total_value;
+SELECT opt_knapsack_best_of([9.0, 7.0, 4.0, 4.0], [123.4567, 5.0, 4.0, 4.0], 8.0).total_value;
 ----
-3.0
+8.0
 
 statement ok
 RESET anofox_optimize_knapsack_max_memory;
@@ -517,3 +521,16 @@ statement error
 SET anofox_optimize_knapsack_max_memory = 'banana';
 ----
 anofox_optimize_knapsack_max_memory
+
+# ── exact is best_of ────────────────────────────────────────────────────────
+
+# The alias returns the very same struct, selection included, on every
+# fixture above.
+query IIIIII
+SELECT (SELECT count(*) FILTER (e <> b) FROM many_solved), (SELECT count(*) FILTER (e <> b) FROM fine_solved),
+       (SELECT count(*) FILTER (e <> b) FROM dec_solved), (SELECT count(*) FILTER (e <> b) FROM wild),
+       (SELECT count(*) FILTER (opt_knapsack_exact(v, w, cap) <> opt_knapsack_best_of(v, w, cap)) FROM edge),
+       (SELECT count(*) FILTER (opt_knapsack_exact(v, w, 20.0) <> opt_knapsack_best_of(v, w, 20.0))
+        FROM (SELECT list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM crates));
+----
+0	0	0	0	0	0
