@@ -294,7 +294,7 @@ SELECT count(*), count(*) FILTER (tw > cap) FROM (
 # capacity of 0.3, so taking both is infeasible even though the DP's whole
 # units (1 + 2 <= 3) say otherwise. Every member takes one item, and the
 # reported total_weight is the sum the check used.
-query RRRRRRRR
+query RRRRIIII
 SELECT opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
        opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
        opt_knapsack_greedy_ratio([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
@@ -381,6 +381,28 @@ SELECT count(*) FILTER (e.total_value < strict_optimum), count(*) FILTER (b.tota
 FROM dec_solved JOIN dec_brute USING (g);
 ----
 10	10	136
+
+# Weights finer than 0.0001 carry NO optimality guarantee, and these pin the
+# documented weakness. Here greedy, on the true weights, takes both
+# 0.00006s (they fit 0.00012 in doubles), although each rounds up to 1 unit
+# against a capacity of 1 unit: exact's answer is not "optimal for the
+# rounded-up weights" either, it is the better of the two.
+query RI
+SELECT opt_knapsack_exact([1.0, 1.0], [0.00006, 0.00006], 0.00012).total_value,
+       opt_knapsack_exact([1.0, 1.0], [0.00006, 0.00006], 0.00012).total_weight <= 0.00012;
+----
+2.0	1
+
+# Here {6, 6} fits (0.00012) and is worth 12, but every weight rounds up to 1
+# unit at a capacity of 1 unit, so the DP takes the 10 alone and best_of skips
+# the DP because greedy's 10 is provably optimal for that ROUNDED instance.
+# Both return 10.
+query RRR
+SELECT opt_knapsack_exact([10.0, 6.0, 6.0], [0.00008, 0.00006, 0.00006], 0.00012).total_value,
+       opt_knapsack_best_of([10.0, 6.0, 6.0], [0.00008, 0.00006, 0.00006], 0.00012).total_value,
+       list_sum([0.00006, 0.00006]::DOUBLE[]) <= 0.00012;
+----
+10.0	10.0	1
 
 # A tiny positive weight never snaps to 0 table units: the tolerance is
 # relative to the weight, not absolute.

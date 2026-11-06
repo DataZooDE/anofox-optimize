@@ -9,7 +9,7 @@ Only two functions return a proven optimum, and both say so in their names.
 
 | Function | Guarantee | Cost | Limit |
 |---|---|---|---|
-| `knapsack_exact` | proven optimum for weights in multiples of 0.0001 whose sums are exact in doubles; finer weights are rounded up (optimal for the rounded weights), and decimal ones such as 0.1 can fall short (fits means summed in doubles, so 0.1 + 0.2 > 0.3) | O(n · capacity) | raises over **50 million cells** or over `anofox_optimize_knapsack_max_memory` (default `'512MB'`, `'64MB'` in DuckDB-Wasm) |
+| `knapsack_exact` | proven optimum for weights in multiples of 0.0001 whose sums are exact in doubles; finer weights are rounded up for the DP and then carry no optimality guarantee, and decimal ones such as 0.1 can fall short (fits means summed in doubles, so 0.1 + 0.2 > 0.3) | O(n · capacity) | raises over **50 million cells** or over `anofox_optimize_knapsack_max_memory` (default `'512MB'`, `'64MB'` in DuckDB-Wasm) |
 | `schedule_exact` | proven optimum | exponential | refuses above **14 jobs** |
 
 `knapsack_best_of` runs `knapsack_exact` too whenever the table is within its

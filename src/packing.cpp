@@ -120,6 +120,8 @@ Packing WorstFitDecreasing(const vector<double> &sizes, double capacity) {
 
 //! Next-fit: only ever the most recently opened bin. Deliberately weak —
 //! a search needs a bad-but-valid member of the family to move away from.
+//! It places items in item order, so each bin's running load already is the
+//! item-order sum and Settle never moves an item here.
 Packing NextFit(const vector<double> &sizes, double capacity) {
 	vector<idx_t> order(sizes.size());
 	std::iota(order.begin(), order.end(), 0);
@@ -167,16 +169,18 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 		for (auto candidate_target : targets) {
 			target = candidate_target;
 			trial_assignment = best.assignment;
-			auto trial_loads = loads;
-			// A bin's load re-summed in item order after a move, rather than
-			// tracked by adding and subtracting, which drifts in the last bit.
-			auto reload = [&](idx_t b) {
-				trial_loads[b] = 0;
-				for (idx_t i = 0; i < sizes.size(); i++) {
-					if (trial_assignment[i] == b) {
-						trial_loads[b] += sizes[i];
-					}
-				}
+			// Each bin's members in item order: a move is accepted only when the
+			// receiving bin fits by the item-order rule (item_order_fit.hpp), so
+			// the final Settle never has to undo an emptied bin. The target's
+			// list is left stale on purpose: it is never a receiving bin.
+			auto trial_members = members;
+			auto add = [&](idx_t b, idx_t i) {
+				auto &m = trial_members[b];
+				m.insert(std::lower_bound(m.begin(), m.end(), i), i);
+			};
+			auto drop = [&](idx_t b, idx_t i) {
+				auto &m = trial_members[b];
+				m.erase(std::find(m.begin(), m.end(), i));
 			};
 			relocated_all = true;
 			for (auto item : members[target]) {
@@ -185,9 +189,9 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 					if (b == target) {
 						continue;
 					}
-					if (trial_loads[b] + sizes[item] <= capacity) {
+					if (ItemOrderLoad(sizes, trial_members[b], item) <= capacity) {
 						trial_assignment[item] = b;
-						reload(b);
+						add(b, item);
 						placed = true;
 					}
 				}
@@ -206,18 +210,21 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 						if (trial_assignment[other] != b || sizes[other] >= sizes[item]) {
 							continue;
 						}
-						if (trial_loads[b] - sizes[other] + sizes[item] > capacity) {
+						auto without_other = trial_members[b];
+						without_other.erase(std::find(without_other.begin(), without_other.end(), other));
+						if (ItemOrderLoad(sizes, without_other, item) > capacity) {
 							continue;
 						}
 						for (idx_t c = 0; c < bin_count; c++) {
 							if (c == target || c == b) {
 								continue;
 							}
-							if (trial_loads[c] + sizes[other] <= capacity) {
+							if (ItemOrderLoad(sizes, trial_members[c], other) <= capacity) {
 								trial_assignment[item] = b;
 								trial_assignment[other] = c;
-								reload(b);
-								reload(c);
+								drop(b, other);
+								add(b, item);
+								add(c, other);
 								placed = true;
 								break;
 							}

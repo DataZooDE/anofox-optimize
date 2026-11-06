@@ -216,6 +216,27 @@ SELECT count(*) FILTER (load > 1.0) FROM (
 ----
 0
 
+# local_search accepts a move only when the receiving bin fits in item order.
+# It checked a running load instead, and on 2 of these sets dissolved a bin
+# that the final repair then reopened: it beat first-fit-decreasing on 8
+# sets, not 10.
+query I
+SELECT count(*) FILTER (ls.bins_used < ffd.bins_used) FROM (
+  SELECT g, any_value(r) FILTER (algo = 'local_search') AS ls, any_value(r) FILTER (algo = 'first_fit_decreasing') AS ffd
+  FROM dec_results GROUP BY g);
+----
+10
+
+# Not degenerate: on some bins the same members summed largest first, the
+# order the decreasing members place them in, and in item order differ.
+query I
+SELECT count(*) FILTER (placed <> in_item_order) > 0 FROM (
+  SELECT g, r.assignment[i] AS bin, list_sum(list(sizes[i] ORDER BY sizes[i] DESC, i)) AS placed,
+         list_sum(list(sizes[i] ORDER BY i)) AS in_item_order
+  FROM dec_results, generate_series(1, 12) t(i) WHERE algo = 'first_fit_decreasing' GROUP BY ALL);
+----
+true
+
 query II
 SELECT count(*), count(*) FILTER (list_max(r.assignment) = r.bins_used
                                   AND len(list_distinct(r.assignment)) = r.bins_used

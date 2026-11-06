@@ -24,11 +24,13 @@ namespace duckdb {
 namespace {
 
 struct Waves {
-	vector<idx_t> wave; // 1-based wave number per order
+	vector<idx_t> wave; // wave number per order: 0-based inside PackInOrder, 1-based once returned
 	double avg_weighted_wave = 0;
 };
 
-//! Pack orders into capacity-bounded waves in the given index order.
+//! Pack orders into capacity-bounded waves in the given index order. In the
+//! identity order (as_given) each running load already is the item-order
+//! sum, so the repair below never moves an order there.
 Waves PackInOrder(const vector<double> &items, const vector<double> &priority, double capacity,
                   const vector<idx_t> &order) {
 	Waves w;

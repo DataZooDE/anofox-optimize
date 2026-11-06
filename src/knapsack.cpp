@@ -34,8 +34,8 @@ struct Selection {
 };
 
 //! Totals of `taken`, each summed in ITEM order: total_weight is then exactly
-//! what a SQL list_sum over the selected weights returns, and the sum that
-//! "fits" is judged by.
+//! what coalesce(list_sum(selected weights), 0) returns, and the sum that
+//! "fits" is judged by (the rule is stated in item_order_fit.hpp).
 Selection Evaluate(const vector<double> &values, const vector<double> &weights,
                    vector<bool> taken) {
 	Selection s;
@@ -60,9 +60,9 @@ double WeightWithout(const vector<double> &weights, const vector<bool> &taken, i
 	return total;
 }
 
-//! Evaluate `taken`, then make it fit strictly, the comparison pack_* uses
-//! with no tolerance, on the weights summed in item order.
-//! Neither the DP's whole units nor a greedy running load (summed in its own
+//! Evaluate `taken`, then make it fit by the item-order rule of
+//! item_order_fit.hpp: the weights summed in item order are at most the
+//! capacity, with no tolerance. Neither the DP's whole units nor a greedy running load (summed in its own
 //! order, not item order) guarantee that: 0.1 + 0.2 is 3 units of 0.1 but
 //! 0.30000000000000004 in doubles, over a capacity of 0.3. Drops the cheapest
 //! item whose removal alone makes it fit; when none does, drops the item with
@@ -81,8 +81,11 @@ Selection Fit(const vector<double> &values, const vector<double> &weights, doubl
 		std::stable_sort(chosen.begin(), chosen.end(), [&](idx_t a, idx_t b) { return values[a] < values[b]; });
 		idx_t drop = chosen.front();
 		bool fits = false;
+		// An item lighter than the excess cannot fix it (up to a rounding
+		// accident, which only changes which item goes), so skip its O(n) sum.
+		const double excess = s.total_weight - capacity;
 		for (auto i : chosen) {
-			if (WeightWithout(weights, s.taken, i) <= capacity) {
+			if (weights[i] >= excess && WeightWithout(weights, s.taken, i) <= capacity) {
 				drop = i;
 				fits = true;
 				break;
@@ -105,7 +108,8 @@ Selection Fit(const vector<double> &values, const vector<double> &weights, doubl
 //! needs ~400 MB. The table is a plain vector outside DuckDB's buffer
 //! manager, so in DuckDB-Wasm, where every thread allocates from one shared
 //! 32-bit heap of 2-4 GB, the default is lower: a few threads' tables at
-//! 512MB each could exhaust it and crash the page.
+//! 512MB each could exhaust it and crash the page. The budget bounds each
+//! call's table, not the process: N threads may hold N tables at once.
 constexpr const char *MAX_MEMORY_SETTING = "anofox_optimize_knapsack_max_memory";
 #ifdef __EMSCRIPTEN__
 constexpr const char *MAX_MEMORY_DEFAULT = "64MB";
@@ -287,8 +291,8 @@ ExactPlan PlanExact(const vector<double> &weights, double capacity, idx_t max_me
 	}
 	// Scale to integers for the DP table: the smallest power of ten (up to
 	// 10^4) that makes every kept weight, and the capacity, whole. Finer
-	// weights stay at 10^4 and are rounded up, so the answer is feasible but
-	// optimal only for the rounded-up weights.
+	// weights stay at 10^4 and are rounded up, so the DP optimizes the
+	// rounded-up weights, not the true ones.
 	double whole;
 	for (int p = 0; p < 4; p++) {
 		bool integral = NearWhole(capacity * plan.scale, whole);
@@ -360,6 +364,7 @@ Selection ExactDP(const vector<double> &values, const vector<double> &weights, d
 		return taken;
 	};
 	auto taken = trace(plan.cap);
+	// cap == 0 has no lighter column: trace(cap - 1) would underflow.
 	if (Evaluate(values, weights, taken).total_weight <= capacity || plan.cap == 0) {
 		return Fit(values, weights, capacity, std::move(taken));
 	}
@@ -617,18 +622,19 @@ void RegisterKnapsackFunctions(ExtensionLoader &loader) {
 	    "knapsack_greedy_value([10.0, 6.0], [5.0, 4.0], 6.0)");
 	AddKnapsackFamily(
 	    loader, "knapsack_exact", ExactMember,
-	    "0/1 knapsack solved by dynamic programming over integer-scaled weights. A "
-	    "selection fits when its weights, summed in item order in doubles, are at most "
-	    "the capacity, with no tolerance; total_weight is that sum. Returns the proven "
-	    "optimum when every weight and the capacity are whole multiples of 0.0001 and "
-	    "their sums are exact in doubles (integers, halves, quarters), unlike the greedy "
-	    "members. "
-	    "Finer weights are rounded UP to the next 0.0001 (and the capacity down), so the "
-	    "answer is optimal only for the rounded-up weights. Decimal weights such as 0.1 "
-	    "can fill the capacity in 0.0001 units yet sum over it in doubles (0.1 + 0.2 > "
-	    "0.3); such an answer is repaired, by dropping the item that costs least or by "
-	    "the best selection one unit lighter, and may then fall short of the optimum. "
-	    "Never below either greedy member, which it also runs. Items heavier than the "
+	    "0/1 knapsack solved by dynamic programming over integer-scaled weights; it also "
+	    "runs both greedy members and returns the best answer. A selection fits when its "
+	    "weights, summed in item order in doubles, are at most the capacity, with no "
+	    "tolerance; total_weight is that sum (0 for an empty selection). Returns the "
+	    "proven optimum when every weight and the capacity are whole multiples of 0.0001 "
+	    "and their sums are exact in doubles (integers, halves, quarters), unlike the "
+	    "greedy members. Decimal weights such as 0.1 can fill the capacity in 0.0001 "
+	    "units yet sum over it in doubles (0.1 + 0.2 > 0.3); such a DP answer is "
+	    "repaired, by dropping the item that costs least or by the best selection one "
+	    "unit lighter, and may then fall short of the optimum. Weights finer than 0.0001 "
+	    "are rounded UP to the next 0.0001 (and the capacity down) for the DP, which "
+	    "optimizes those rounded weights; there the result carries NO optimality "
+	    "guarantee and can miss a better selection that fits. Items heavier than the "
 	    "capacity are never taken and do not affect the scaling. The table has "
 	    "items * (capacity + 1) cells, counting weights in the smallest unit (1, 0.1, "
 	    "... 0.0001) that makes every item that can fit, and the capacity, whole. It "
@@ -655,8 +661,9 @@ void RegisterKnapsackFunctions(ExtensionLoader &loader) {
     "case you are in. The DP's time and memory grow with items * capacity, so near "
     "the limits it is far slower than the greedy members, and knapsack_by, whose "
     "default algorithm is best_of, pays that per group. The DP is skipped when greedy "
-    "provably is the optimum: every positive-value item fits, nothing fits, or the "
-    "best-ratio prefix fills the capacity exactly. Never loses to any single member. "
+    "is provably optimal for the DP's rounded instance (every positive-value item fits, "
+    "nothing fits, or the best-ratio prefix fills the capacity exactly); for weights "
+    "finer than 0.0001 that is not the true optimum. Never loses to any single member. "
     "Same signature as the other knapsack functions.",
     "knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)");
 }

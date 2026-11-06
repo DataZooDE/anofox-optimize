@@ -349,7 +349,8 @@ vector<Family> Families() {
 	     "Table macro: bin packing as one row per item{schema}: the group column, model_id (the algorithm), bin "
 	     "(1-based), item, size, capacity. Each group "
 	     "of data is one instance, packed by every pack_* algorithm in algorithms (default ['best_of']). data is a "
-	     "table name or a '(SELECT ...)' string; the column arguments are column names.",
+	     "table name or a '(SELECT ...)' string; the column arguments are column names. A bin fits when its "
+	     "sizes, summed in item_col order in doubles, are at most the capacity.",
 	     "Table macro: the objective of bin packing per group and algorithm{schema}: the group column, model_id (the "
 	     "algorithm), metric (bins_used), value, conf_low, "
 	     "conf_high. Same arguments as pack_by.",
@@ -374,7 +375,7 @@ vector<Family> Families() {
 	     "wave (1-based), item, size, "
 	     "capacity, priority. Each group of data is one instance, batched by every wave_* algorithm in algorithms "
 	     "(default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column "
-	     "names.",
+	     "names. A wave fits when its sizes, summed in item_col order in doubles, are at most the capacity.",
 	     "Table macro: the objectives of pick-wave batching per group and algorithm{schema}: the group column, "
 	     "model_id (the algorithm), metric (avg_weighted_wave, "
 	     "waves_used), value, conf_low, conf_high. Same arguments as wave_by.",

@@ -14,7 +14,10 @@
   also runs both greedy members and never returns less than they do. Its proven optimum now needs weights
   and capacity in multiples of 0.0001 whose sums are exact in doubles (integers, halves, quarters); on
   1,000 instances with weights in steps of 0.1 it fell short of the strict optimum on 10. Integer-weight
-  results are unchanged.
+  results are unchanged. For weights finer than 0.0001, which the DP rounds up, the descriptions no longer
+  claim optimality, for the rounded weights or otherwise: with values [10, 6, 6], weights
+  [0.00008, 0.00006, 0.00006] and capacity 0.00012, `knapsack_exact` and `knapsack_best_of` return 10 while
+  {6, 6} fits and is worth 12.
 - **`anofox_optimize_knapsack_max_memory` defaults to `'64MB'` in DuckDB-Wasm** (still `'512MB'` natively).
   The DP table is a plain allocation outside DuckDB's buffer manager, and in DuckDB-Wasm every thread
   allocates from one shared 32-bit heap of 2–4 GB, so a few threads' 512MB tables could crash the page.
@@ -36,9 +39,12 @@
   in one shared repair (`src/include/item_order_fit.hpp`): while a bin or wave is over, its smallest item
   (for waves, its lowest-priority order) moves to the first other one it fits, else to a new one. Ids stay
   1-based and contiguous, and `avg_weighted_wave` is computed from the final waves. On 2000 sets of twelve
-  sizes in steps of 0.1 at capacity 1.0, the repair added one bin on 2 sets for four pack members and none
-  for `pack_best_of`, and one wave on 2 sets for `wave_fewest_waves`; on integer sizes no result changed.
-  `pack_local_search` re-sums a bin after a move instead of adding and subtracting.
+  sizes in steps of 0.1 at capacity 1.0, the repair added one bin on 2 sets for first-fit-, best-fit-decreasing
+  and bin completion and none for `pack_best_of`, and one wave on 2 sets for `wave_fewest_waves`; on integer
+  sizes no result changed. The repair may move an item into an earlier bin or wave; `pack_next_fit` and
+  `wave_as_given` place in item order and never need it. `pack_local_search` accepts a move only when the
+  receiving bin fits in item order, so the repair never reopens a bin it emptied (it beats
+  first-fit-decreasing on 10 of those sets, not 8).
 
 ## v2026.11.6
 

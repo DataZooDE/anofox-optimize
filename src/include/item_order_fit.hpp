@@ -1,5 +1,6 @@
 #pragma once
 #include "duckdb.hpp"
+#include "duckdb/common/exception.hpp"
 
 #include <algorithm>
 #include <vector>
@@ -46,6 +47,12 @@ idx_t SettleInItemOrder(const vector<double> &sizes, double capacity, vector<idx
 	vector<vector<idx_t>> members(count);
 	vector<double> loads(count, 0.0);
 	for (idx_t i = 0; i < sizes.size(); i++) {
+		// The precondition that makes this end: an item over the capacity
+		// would move to a new group forever. Callers reject such items.
+		if (sizes[i] > capacity) {
+			throw InternalException("SettleInItemOrder: item %llu of size %f exceeds capacity %f",
+			                        static_cast<uint64_t>(i), sizes[i], capacity);
+		}
 		members[group[i]].push_back(i);
 		loads[group[i]] += sizes[i];
 	}
@@ -58,9 +65,8 @@ idx_t SettleInItemOrder(const vector<double> &sizes, double capacity, vector<idx
 					item = i;
 				}
 			}
-			auto &from = members[g];
-			from.erase(std::find(from.begin(), from.end(), item));
-			loads[g] = ItemOrderLoad(sizes, from);
+			members[g].erase(std::find(members[g].begin(), members[g].end(), item));
+			loads[g] = ItemOrderLoad(sizes, members[g]);
 			idx_t to = members.size();
 			for (idx_t h = 0; h < members.size(); h++) {
 				if (h != g && ItemOrderLoad(sizes, members[h], item) <= capacity) {

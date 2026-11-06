@@ -110,6 +110,16 @@ SELECT count(*) FILTER (load > 1.0) FROM (
 ----
 0
 
+# Not degenerate: on some waves the same orders summed highest priority
+# first, the order priority_first places them in, and in item order differ.
+query I
+SELECT count(*) FILTER (placed <> in_item_order) > 0 FROM (
+  SELECT g, v.wave[i] AS w, list_sum(list(items[i] ORDER BY prio[i] DESC, i)) AS placed,
+         list_sum(list(items[i] ORDER BY i)) AS in_item_order
+  FROM dec_results, generate_series(1, 12) t(i) WHERE algo = 'priority_first' GROUP BY ALL);
+----
+true
+
 query II
 SELECT count(*), count(*) FILTER (len(list_distinct(v.wave)) = list_max(v.wave) AND list_min(v.wave) = 1
                                   AND abs(v.avg_weighted_wave - list_sum(list_transform(v.wave, lambda w, i: w * prio[i]))
