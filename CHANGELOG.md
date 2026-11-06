@@ -2,7 +2,26 @@
 
 ## Unreleased
 
-The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had failed `LOAD`.
+The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had failed `LOAD`. The other families' decisions plot too: anofox-visualization v2026.11.5 has a schema for each.
+
+### Added
+
+- **`selection`, `sequence` and `weights` producers** (#19, #20): the long forms are tagged in
+  `duckdb_functions()` with `anofox.contract = '1'` and the schema they already returned, so `anofox_plot(t)`
+  draws them. No column changes.
+  - `knapsack_by`, `assortment_by` and `assortment_recapture_by` return `selection`: a bar per item, picked or not;
+  - `sequence_by` returns `sequence`: a step line of the cumulative setup, one step per position and item;
+  - `portfolio_by` returns `weights`: the weight per asset.
+- The visualization pickup check renders these five and checks their values: every item a bar of its measure
+  and its picked flag, every step at its cumulative setup, every asset a segment of its weight.
+- **DuckDB-Wasm runtime test** (`test/wasm`, from anofox-forecast): the whole `test/sql` suite runs in
+  DuckDB-Wasm under Node against the v1.5.6 `wasm_eh` artifact, and the v1.5.6 deploy waits for it.
+  After each wasm upload the deploy job downloads what it published, checks the section count and runs
+  `test/wasm/post_upload_smoke.test` on it (`scripts/extension-verify-upload.sh`). `make audit` runs
+  the section walker's self-test, and `make test_wasm` runs the suite against `build/wasm_eh`.
+- **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
+  because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
+  message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).
 
 ### Fixed
 
@@ -18,17 +37,6 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
   telemetry, did not register the `anofox_telemetry_*` options, so the documented opt-out failed with
   "unrecognized configuration parameter". The options now exist everywhere; there they change nothing, and
   `anofox_telemetry_enabled` defaults to `false`.
-
-### Added
-
-- **DuckDB-Wasm runtime test** (`test/wasm`, from anofox-forecast): the whole `test/sql` suite runs in
-  DuckDB-Wasm under Node against the v1.5.6 `wasm_eh` artifact, and the v1.5.6 deploy waits for it.
-  After each wasm upload the deploy job downloads what it published, checks the section count and runs
-  `test/wasm/post_upload_smoke.test` on it (`scripts/extension-verify-upload.sh`). `make audit` runs
-  the section walker's self-test, and `make test_wasm` runs the suite against `build/wasm_eh`.
-- **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
-  because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
-  message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).
 
 ## v2026.10.26
 
