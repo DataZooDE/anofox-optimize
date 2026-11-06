@@ -64,3 +64,188 @@ query I
 SELECT opt_knapsack_exact([5.0, 3.0], [2.0, 1.0], 0.0).total_value;
 ----
 0
+
+# ── best_of is exact whenever exact can solve the instance ──────────────────
+
+# The south depot of a delivery run, capacity 20: the best-ratio crate (s1)
+# blocks the two crates that make the optimum (31 against 36), and the most
+# valuable crate (s2) leaves room for nothing (27). best_of must not stop at
+# the best greedy answer when the DP table is small.
+statement ok
+CREATE TABLE crates AS SELECT * FROM (VALUES
+    (0, 11.0, 2.0), (1, 27.0, 19.0), (2, 18.0, 10.0), (3, 18.0, 10.0), (4, 2.0, 7.0)) t(k, val, kg);
+
+# The optimum, found independently by trying every subset.
+query R
+SELECT max(tv) FROM (SELECT mask, sum(val) AS tv, sum(kg) AS tw FROM crates, range(0, 32) m(mask)
+                     WHERE (mask >> k) & 1 = 1 GROUP BY mask) WHERE tw <= 20;
+----
+36.0
+
+query RRRR
+WITH l AS (SELECT list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM crates)
+SELECT opt_knapsack_best_of(v, w, 20.0).total_value, opt_knapsack_exact(v, w, 20.0).total_value,
+       opt_knapsack_greedy_ratio(v, w, 20.0).total_value, opt_knapsack_greedy_value(v, w, 20.0).total_value
+FROM l;
+----
+36.0	36.0	31.0	27.0
+
+# The long form defaults to best_of, so its default is the optimum too.
+query R
+SELECT sum(value) FILTER (selected) FROM opt_knapsack_by('(SELECT k, val, kg FROM crates)', 'k', 'val', 'kg', 20.0);
+----
+36.0
+
+# Many instances at once: best_of equals the brute-force optimum on every
+# one of them, and is never below any member. 300 instances of 8 items with
+# integer weights; the greedy members miss the optimum on a measurable share,
+# so the fixture separates them.
+statement ok
+CREATE TABLE many AS
+SELECT g, k, (1 + (g * 7 + k * 13) % 23)::DOUBLE AS val, (1 + (g * 5 + k * 11) % 17)::DOUBLE AS kg
+FROM range(0, 300) a(g), range(0, 8) b(k);
+
+statement ok
+CREATE TABLE many_brute AS
+SELECT g, max(tv) AS optimum FROM (
+    SELECT g, mask, sum(val) AS tv, sum(kg) AS tw FROM many, range(0, 256) m(mask)
+    WHERE (mask >> k) & 1 = 1 GROUP BY ALL) WHERE tw <= 30 GROUP BY g;
+
+statement ok
+CREATE TABLE many_solved AS
+WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM many GROUP BY g)
+SELECT g, opt_knapsack_best_of(v, w, 30.0) AS b, opt_knapsack_exact(v, w, 30.0) AS e,
+       opt_knapsack_greedy_ratio(v, w, 30.0) AS r, opt_knapsack_greedy_value(v, w, 30.0) AS gv
+FROM l;
+
+query IIII
+SELECT count(*), count(*) FILTER (b.total_value = optimum),
+       count(*) FILTER (b.total_value >= r.total_value AND b.total_value >= gv.total_value AND b.total_value >= e.total_value),
+       count(*) FILTER (b.total_weight <= 30.0 AND len(b.selected) = 8)
+FROM many_solved JOIN many_brute USING (g);
+----
+300	300	300	300
+
+# The fixture is not degenerate: the best greedy answer misses the optimum
+# on some instances.
+query I
+SELECT count(*) FILTER (greatest(r.total_value, gv.total_value) < optimum) > 0
+FROM many_solved JOIN many_brute USING (g);
+----
+true
+
+# best_of >= every member on the classic fixture, too.
+query I
+SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value
+       = opt_knapsack_exact([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value;
+----
+true
+
+# When exact would REFUSE (here a 200M-cell table), best_of does NOT error:
+# it returns the best greedy answer, which is feasible but no longer a bound.
+# by-value wins this instance (10 against 6), so best_of must take the max.
+statement error
+SELECT opt_knapsack_exact([10.0, 6.0], [1e8, 5e7], 1e8);
+----
+over the
+
+query RRRR
+SELECT opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8).total_value,
+       opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8).total_weight,
+       opt_knapsack_greedy_ratio([10.0, 6.0], [1e8, 5e7], 1e8).total_value,
+       opt_knapsack_greedy_value([10.0, 6.0], [1e8, 5e7], 1e8).total_value;
+----
+10.0	100000000.0	6.0	10.0
+
+# ...and on the classic fixture scaled past the limit: both greedy members
+# return 7, so best_of returns 7 and the optimum of 8 stays out of reach.
+query RR
+SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e7, 4e7, 4e7], 8e7).total_value,
+       greatest(opt_knapsack_greedy_ratio([7.0, 4.0, 4.0], [5e7, 4e7, 4e7], 8e7).total_value,
+                opt_knapsack_greedy_value([7.0, 4.0, 4.0], [5e7, 4e7, 4e7], 8e7).total_value);
+----
+7.0	7.0
+
+# Weights too fine to scale to integers are rounded inside the DP table;
+# best_of must still never return a selection over capacity.
+query I
+SELECT opt_knapsack_best_of([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007;
+----
+true
+
+# ── exact never returns an over-capacity answer ─────────────────────────────
+
+# Weights not whole at the 10^4 scale used to be ROUNDED to nearest inside the
+# table: both items rounded to weight 0 and the DP took both, 8e-05 against a
+# capacity of 7e-05. They are now rounded UP (and the capacity down), so the
+# answer is always feasible.
+query I
+SELECT opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007;
+----
+true
+
+# A sweep over fine-grained weights and capacities: every exact and best_of
+# answer fits, on every row.
+statement ok
+CREATE TABLE fine AS
+SELECT g, k, (1 + (g * 31 + k * 17) % 19)::DOUBLE AS val,
+       abs(sin(g * 3 + k * 7)) * 0.003 AS kg,
+       (0.004 + (g % 13) * 0.0007 + g * 0.0000000137)::DOUBLE AS cap
+FROM range(0, 500) a(g), range(0, 10) b(k);
+
+statement ok
+CREATE TABLE fine_solved AS
+WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w, any_value(cap) AS cap FROM fine GROUP BY g)
+SELECT g, cap, opt_knapsack_exact(v, w, cap) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+       opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
+FROM l;
+
+query III
+SELECT count(*), count(*) FILTER (e.total_weight <= cap AND len(e.selected) = 10),
+       count(*) FILTER (b.total_weight <= cap AND len(b.selected) = 10)
+FROM fine_solved;
+----
+500	500	500
+
+# best_of is exactly the best of its members there too.
+query I
+SELECT count(*) FROM fine_solved
+WHERE b.total_value <> greatest(e.total_value, r.total_value, gv.total_value);
+----
+0
+
+# The sweep separates the members both ways. The DP beats both greedy members
+# on some rows; on others greedy wins, because the DP optimizes the weights
+# ROUNDED UP to 0.0001 and so gives away capacity. That is the price of
+# feasibility, and best_of keeps whichever is better.
+query II
+SELECT count(*) FILTER (e.total_value > greatest(r.total_value, gv.total_value)) > 0,
+       count(*) FILTER (e.total_value < greatest(r.total_value, gv.total_value)) > 0
+FROM fine_solved;
+----
+true	true
+
+# ── best_of skips the DP only when greedy is provably optimal ───────────────
+
+# Skipping must never change the answer: on every instance best_of equals the
+# best of always running the DP and both greedy members, and the brute-force
+# optimum. Capacity 30 makes most instances need the DP; capacity 1000 makes
+# every item fit, where greedy already is the optimum.
+query II
+WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM many GROUP BY g),
+     s AS (SELECT g, c, opt_knapsack_best_of(v, w, c) AS b, opt_knapsack_exact(v, w, c) AS e,
+                  opt_knapsack_greedy_ratio(v, w, c) AS r, opt_knapsack_greedy_value(v, w, c) AS gv
+           FROM l, (VALUES (30.0), (1000.0)) cs(c))
+SELECT count(*), count(*) FILTER (b.total_value = greatest(e.total_value, r.total_value, gv.total_value)
+                                  AND b.total_value = e.total_value)
+FROM s;
+----
+600	600
+
+# When everything fits, greedy by ratio also takes negative-value items; the
+# optimum leaves them out, so the DP must still run.
+query RR
+SELECT opt_knapsack_greedy_ratio([5.0, -1.0], [1.0, 1.0], 10.0).total_value,
+       opt_knapsack_best_of([5.0, -1.0], [1.0, 1.0], 10.0).total_value;
+----
+4.0	5.0

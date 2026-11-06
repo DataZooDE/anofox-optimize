@@ -108,7 +108,7 @@ Example: `anofox_optimize_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,
 
 `anofox_optimize_knapsack_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-Runs the greedy knapsack members and returns whichever captured more value. Cheap and never loses to any single greedy member, but it is NOT exact — use knapsack_exact when the instance is small enough. Same signature as the other knapsack functions.
+Runs both greedy knapsack members and, when the instance is small enough for knapsack_exact, the exact dynamic program too, and returns whichever captured the most value. Small enough means items * (capacity + 1) is at most 50 million, with weights and capacity counted in the smallest unit (1, 0.1, ... 0.0001) that makes them whole numbers — e.g. 500 items at capacity 99,999. There the result is the proven optimum when every weight and the capacity are whole multiples of 0.0001; finer weights are rounded up, and the result is then always within capacity but optimal only for the rounded-up weights. Above the limit best_of does NOT raise but silently returns the best greedy answer, which is NOT exact and carries no guarantee — call knapsack_exact if you need to know which case you are in. The DP costs about 5 ns per table cell — roughly a quarter second per row at the limit, against microseconds for the greedy members — and is skipped only when greedy provably is the optimum: every positive-value item fits, or the best-ratio prefix fills the capacity exactly. Never loses to any single member. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 
@@ -124,7 +124,7 @@ Example: `SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, 
 
 `anofox_optimize_knapsack_exact(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-0/1 knapsack solved EXACTLY by dynamic programming over integer-scaled weights. Returns the true optimum, unlike the greedy members. RAISES rather than degrading when the instance needs too large a table (many items, large capacity, or weights needing fine scaling) — a caller who asked for the exact answer and silently received a heuristic one could not tell its result is no longer a bound. Same signature as the other knapsack functions.
+0/1 knapsack solved by dynamic programming over integer-scaled weights. Returns the proven optimum when every weight and the capacity are whole multiples of 0.0001, unlike the greedy members. Finer weights are rounded UP to the next 0.0001 (and the capacity down), so the answer is always within capacity but optimal only for the rounded-up weights. RAISES rather than degrading when the table is too large — items * (capacity + 1) over 50 million, counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes them whole — since a caller who asked for the exact answer and silently received a heuristic one could not tell its result is no longer a bound. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)`
 
