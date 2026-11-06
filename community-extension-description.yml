@@ -89,8 +89,10 @@ docs:
     ### Honesty about guarantees
 
     Two functions return a **proven optimum** and say so in their names:
-    `knapsack_exact` and `schedule_exact`. Everything else is heuristic and
-    carries no guarantee. Functions that would blow up refuse rather than hang —
+    `knapsack_exact` and `schedule_exact`. `knapsack_best_of` is also exact
+    whenever `knapsack_exact`'s table fits (items × (capacity + 1) ≤ 50
+    million), and returns its best greedy answer, which is not exact, above
+    that. Everything else is heuristic and carries no guarantee. Functions that would blow up refuse rather than hang —
     `schedule_exact` rejects more than 14 jobs with an error naming the
     heuristic to use instead.
 

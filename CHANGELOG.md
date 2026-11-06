@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact`'s table fits
+  (items × (capacity + 1) ≤ 50 million in whole units), so it is the proven optimum there; above the
+  limit it still returns the best greedy answer without raising. `knapsack_by`'s default `['best_of']`
+  is therefore exact on small instances — on a five-crate fixture it went from 31 to the optimum of 36.
+  Both functions share one limit check. Inside the limit, `best_of` now costs about 10 ns per table cell
+  rather than microseconds per row.
+
 ## v2026.10.26
 
 **Breaking:** every index the solvers return is a 1-based BIGINT, the SQL convention (#7). Producers gain `row_order`.

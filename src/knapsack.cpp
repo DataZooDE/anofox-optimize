@@ -88,8 +88,40 @@ Selection GreedyValue(const vector<double> &values, const vector<double> &weight
 //! Largest DP table this will build. Beyond it the exact member REFUSES
 //! rather than silently degrading to a heuristic: a caller who asked for
 //! the exact answer and got a greedy one, with no signal, cannot tell
-//! that its result is no longer a bound.
+//! that its result is no longer a bound. best_of shares the same limit,
+//! but falls back to its greedy members instead of raising.
 constexpr idx_t MAX_DP_CELLS = 50u * 1000u * 1000u;
+
+//! Whether the exact DP can solve an instance, and at what integer scale.
+//! The ONE place the exact member's limit lives: knapsack_exact raises when
+//! `fits` is false, knapsack_best_of skips the DP instead.
+struct ExactPlan {
+	double scale = 1.0;
+	double cells = 0;
+	bool fits = false;
+};
+
+ExactPlan PlanExact(const vector<double> &weights, double capacity) {
+	// Scale to integers for the DP table: the smallest power of ten (up to
+	// 10^4) that makes every weight and the capacity integral.
+	ExactPlan plan;
+	for (int p = 0; p < 4; p++) {
+		bool integral = true;
+		for (auto wgt : weights) {
+			if (std::fabs(wgt * plan.scale - std::llround(wgt * plan.scale)) > 1e-9) {
+				integral = false;
+				break;
+			}
+		}
+		if (integral && std::fabs(capacity * plan.scale - std::llround(capacity * plan.scale)) <= 1e-9) {
+			break;
+		}
+		plan.scale *= 10.0;
+	}
+	plan.cells = static_cast<double>(weights.size()) * (capacity * plan.scale + 1);
+	plan.fits = plan.cells <= static_cast<double>(MAX_DP_CELLS);
+	return plan;
+}
 
 //! Exact 0/1 knapsack by dynamic programming over integer-scaled weights.
 Selection ExactDP(const vector<double> &values, const vector<double> &weights, double capacity,
@@ -125,12 +157,24 @@ Selection ExactDP(const vector<double> &values, const vector<double> &weights, d
 	return Evaluate(values, weights, std::move(taken));
 }
 
+//! The best of the greedy members and, when its table fits, the exact DP.
+//! The DP answer is only taken if it really fits in the capacity: weights
+//! too fine for 10^4 scaling are ROUNDED inside the table, and a rounded
+//! selection can exceed the true capacity. So: never worse than the greedy
+//! members, never infeasible.
 Selection BestOfKnapsack(const vector<double> &values, const vector<double> &weights,
                          double capacity) {
 	auto best = GreedyRatio(values, weights, capacity);
 	auto by_value = GreedyValue(values, weights, capacity);
 	if (by_value.total_value > best.total_value) {
 		best = by_value;
+	}
+	const auto plan = PlanExact(weights, capacity);
+	if (plan.fits) {
+		auto exact = ExactDP(values, weights, capacity, plan.scale);
+		if (exact.total_value > best.total_value && exact.total_weight <= capacity) {
+			best = std::move(exact);
+		}
 	}
 	return best;
 }
@@ -239,36 +283,19 @@ static void AddKnapsackFunction(ExtensionLoader &loader, const string &name,
 
 			    Selection sel;
 			    if (exact) {
-				    // Scale to integers for the DP table. Refuse rather than
-				    // silently degrade: a caller who asked for the exact answer
-				    // and got a heuristic one cannot tell it is no longer a bound.
-				    double scale = 1.0;
-				    for (int p = 0; p < 4; p++) {
-					    bool integral = true;
-					    for (auto wgt : weights) {
-						    if (std::fabs(wgt * scale - std::llround(wgt * scale)) > 1e-9) {
-							    integral = false;
-							    break;
-						    }
-					    }
-					    if (integral && std::fabs(capacity * scale -
-					                              std::llround(capacity * scale)) <= 1e-9) {
-						    break;
-					    }
-					    scale *= 10.0;
-				    }
-				    const double cells =
-				        static_cast<double>(values.size()) * (capacity * scale + 1);
-				    if (!(cells <= static_cast<double>(MAX_DP_CELLS))) {
+				    // Refuse rather than silently degrade: a caller who asked for the
+				    // exact answer and got a heuristic one cannot tell it is no longer a bound.
+				    const auto plan = PlanExact(weights, capacity);
+				    if (!plan.fits) {
 					    throw InvalidInputException(
 					        "exact knapsack needs a %.0f-cell table for %llu items at "
 					        "capacity %f (weights scaled by %.0f to make them integral), "
 					        "over the %llu-cell limit. Use opt_knapsack_greedy_ratio for "
 					        "an approximate answer, or round the weights to coarser units.",
-					        cells, static_cast<uint64_t>(values.size()), capacity, scale,
+					        plan.cells, static_cast<uint64_t>(values.size()), capacity, plan.scale,
 					        static_cast<uint64_t>(MAX_DP_CELLS));
 				    }
-				    sel = ExactDP(values, weights, capacity, scale);
+				    sel = ExactDP(values, weights, capacity, plan.scale);
 			    } else {
 				    sel = fn(values, weights, capacity);
 			    }
@@ -330,10 +357,19 @@ void RegisterKnapsackFunctions(ExtensionLoader &loader) {
 	    "knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)");
 	AddKnapsackFamily(
 	    loader, "knapsack_best_of", BestOfKnapsack, false,
-	    "Runs the greedy knapsack members and returns whichever captured more value. "
-	    "Cheap and never loses to any single greedy member, but it is NOT exact — use "
-	    "knapsack_exact when the instance is small enough. Same signature as the other "
-	    "knapsack functions.",
+	    "Runs both greedy knapsack members and, when the instance is small enough for "
+	    "knapsack_exact, the exact dynamic program too, and returns whichever captured "
+	    "the most value. Small enough means items * (capacity + 1) is at most 50 "
+	    "million, with weights and capacity counted in the smallest unit (1, 0.1, ... "
+	    "0.0001) that makes them whole numbers — e.g. 500 items at capacity 99,999. "
+	    "There the result is the proven optimum (unless weights are finer than 0.0001: "
+	    "they are then rounded and the result is only feasible, not guaranteed "
+	    "optimal); above the limit best_of does NOT raise but "
+	    "silently returns the best greedy answer, which is NOT exact and carries no "
+	    "guarantee — call knapsack_exact if you need to know which case you are in. "
+	    "The DP costs about 10 ns per table cell — roughly half a second per row at the "
+	    "limit, against microseconds for the greedy members. Never loses to any single "
+	    "member. Same signature as the other knapsack functions.",
 	    "knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)");
 }
 

@@ -63,8 +63,10 @@ FROM shipments;
 ## Honesty about guarantees
 
 Two functions return a **proven optimum** and say so in their names:
-`knapsack_exact` and `schedule_exact`. Everything else is heuristic and comes
-with no guarantee attached.
+`knapsack_exact` and `schedule_exact`. `knapsack_best_of` is also exact
+whenever `knapsack_exact`'s table fits (items × (capacity + 1) ≤ 50 million),
+and returns its best greedy answer, which is not exact, above that. Everything
+else is heuristic and comes with no guarantee attached.
 
 Each family also ships a deliberately **weak** member (`pack_next_fit`,
 `portfolio_top_return`, `assortment_top_margin`, `sequence_as_given`). You

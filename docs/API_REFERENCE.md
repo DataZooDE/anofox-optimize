@@ -108,7 +108,7 @@ Example: `anofox_optimize_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,
 
 `anofox_optimize_knapsack_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-Runs the greedy knapsack members and returns whichever captured more value. Cheap and never loses to any single greedy member, but it is NOT exact — use knapsack_exact when the instance is small enough. Same signature as the other knapsack functions.
+Runs both greedy knapsack members and, when the instance is small enough for knapsack_exact, the exact dynamic program too, and returns whichever captured the most value. Small enough means items * (capacity + 1) is at most 50 million, with weights and capacity counted in the smallest unit (1, 0.1, ... 0.0001) that makes them whole numbers — e.g. 500 items at capacity 99,999. There the result is the proven optimum (unless weights are finer than 0.0001: they are then rounded and the result is only feasible, not guaranteed optimal); above the limit best_of does NOT raise but silently returns the best greedy answer, which is NOT exact and carries no guarantee — call knapsack_exact if you need to know which case you are in. The DP costs about 10 ns per table cell — roughly half a second per row at the limit, against microseconds for the greedy members. Never loses to any single member. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 

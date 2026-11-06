@@ -82,9 +82,17 @@ Cost is O(n · capacity) time and memory, so it scales with the *numeric*
 capacity, not just the item count. A capacity of 1,000 with 60 items is
 trivial; a capacity of 10^9 is not.
 
-**`best_of`** — runs the greedy members. It is explicitly **not** exact, and
-its description says so, because a caller who wants a guarantee must ask for
-`exact` and accept its cost.
+**`best_of`** — runs both greedy members and, when the DP table fits
+(items × (capacity + 1) ≤ 50 million, counting weights in the smallest unit
+down to 0.0001 that makes them whole), `exact` too, and keeps the most
+valuable answer. Inside the limit it is the proven optimum, unless weights are
+finer than 0.0001: the table rounds them, so `best_of` keeps the DP answer
+only if it truly fits and is then no longer guaranteed optimal. Above it, it does
+not raise like `exact` does: it returns the best greedy answer, which is
+**not** exact. A caller who needs a guarantee must still ask for `exact`,
+which raises instead of degrading. The DP costs about 10 ns per table
+cell, so near the limit `best_of` takes about half a second per row, against
+microseconds for the greedy members.
 
 ### Subset-sum is knapsack with value = weight
 
