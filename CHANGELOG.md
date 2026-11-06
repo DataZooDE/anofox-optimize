@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v2026.11.7
+
+**Breaking:** `knapsack_exact` is an alias of `knapsack_best_of` and no longer raises past its limits. A bin, wave or
+knapsack selection fits when its sizes, summed in item order in doubles, are within capacity, for every family;
+decimal inputs such as 0.1 + 0.2 at capacity 0.3 used to come back over capacity by the last digit. The knapsack
+DP budget defaults to 64MB in DuckDB-Wasm.
 
 ### Breaking
 
