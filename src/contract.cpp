@@ -9,12 +9,12 @@
 //                                                                                -> assignment
 //   schedule_by(data, job_col, processing_col, due_col, priority_col
 //               [, setup_data, group_col, algorithms])                           -> schedule
-//   knapsack_by(data, item_col, value_col, weight_col, capacity [, …])           (no schema yet)
-//   sequence_by(data, item_col, setup_data [, …])                                (no schema yet)
+//   knapsack_by(data, item_col, value_col, weight_col, capacity [, …])           -> selection
+//   sequence_by(data, item_col, setup_data [, …])                                -> sequence
 //   assortment_by / assortment_recapture_by(data, item_col, margin_col, demand_col,
-//                                           substitution_data, shelf [, …])      (no schema yet)
+//                                           substitution_data, shelf [, …])      -> selection
 //   portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap [, …])
-//                                                                                (no schema yet)
+//                                                                                -> weights
 //   <family>_objectives_by (the same arguments as <family>_by)                   -> summary
 //   anofox_contract_version()                                                    -> '1'
 //
@@ -272,7 +272,7 @@ struct Family {
 	std::string call; // the solver call over _s / _m, with {a} for the algorithm
 	std::string long_tail;
 	std::string objectives_tail;
-	const char *output; // the long form's contract schema, nullptr while the visualization has none
+	const char *output; // the long form's contract schema
 	std::string long_description;
 	std::string objectives_description;
 	std::string long_example;
@@ -312,9 +312,9 @@ Family Assortment(const char *name, const char *model) {
 	        "unnest(_demands) AS demand, unnest(_r.listed) AS listed FROM _sol) ORDER BY row_order",
 	        ") " + Objectives("'captured_margin', 'items_listed'",
 	                          "_r.captured_margin, len([x FOR x IN _r.listed IF x])::DOUBLE", "_sol"),
-	        nullptr,
-	        "Table macro: the shelf as one row per product: the group column, model_id (the algorithm), item, "
-	        "margin, demand, listed. " +
+	        "selection",
+	        "Table macro: the shelf as one row per product (the anofox integration contract's `selection` schema, "
+	        "for anofox_plot): the group column, model_id (the algorithm), item, margin, demand, listed. " +
 	            std::string(model) +
 	            " substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of "
 	            "from_id's demand that moves to to_id." + GROUP_NOTE,
@@ -432,9 +432,9 @@ vector<Family> Families() {
 	     "AS weight, unnest(_r.selected) AS selected, {n:capacity} AS capacity FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'items_selected', 'total_value', 'total_weight'",
 	                       "len([x FOR x IN _r.selected IF x])::DOUBLE, _r.total_value, _r.total_weight", "_sol"),
-	     nullptr,
-	     "Table macro: the knapsack as one row per item: the group column, model_id (the algorithm), item, value, "
-	     "weight, selected, capacity." +
+	     "selection",
+	     "Table macro: the knapsack as one row per item (the anofox integration contract's `selection` schema, for "
+	     "anofox_plot): the group column, model_id (the algorithm), item, value, weight, selected, capacity." +
 	         std::string(GROUP_NOTE),
 	     "Table macro: the objectives of the knapsack per group and algorithm (the anofox integration contract's "
 	     "`summary` schema): the group column, model_id (the algorithm), metric (items_selected, total_value, "
@@ -456,9 +456,9 @@ vector<Family> Families() {
 	         "model_id ORDER BY _pos ROWS UNBOUNDED PRECEDING) AS cumulative_setup, row_number() OVER (ORDER BY _g, "
 	         "model_id, _pos) AS row_order FROM _o2 ORDER BY row_order",
 	     ") " + Objectives("'total_setup'", "_r.total_setup", "_sol"),
-	     nullptr,
-	     "Table macro: a sequence as one row per item in run order: the group column, model_id (the algorithm), "
-	     "position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or "
+	     "sequence",
+	     "Table macro: a sequence as one row per item in run order (the anofox integration contract's `sequence` "
+	     "schema, for anofox_plot): the group column, model_id (the algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or "
 	     "'(SELECT ...)' with columns from_id, to_id, value: the cost of running to_id right after from_id; a "
 	     "missing pair costs 0." +
 	         std::string(GROUP_NOTE),
@@ -485,9 +485,9 @@ vector<Family> Families() {
 	                       "_r.expected_return, len([x FOR x IN _r.weights IF x > 0])::DOUBLE, _r.sharpe, "
 	                       "_r.volatility",
 	                       "_sol"),
-	     nullptr,
-	     "Table macro: a portfolio as one row per asset: the group column, model_id (the algorithm), item, "
-	     "expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; "
+	     "weights",
+	     "Table macro: a portfolio as one row per asset (the anofox integration contract's `weights` schema, for "
+	     "anofox_plot): the group column, model_id (the algorithm), item, expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; "
 	     "a pair given once counts both ways." +
 	         std::string(GROUP_NOTE),
 	     "Table macro: the objectives of a portfolio per group and algorithm (the anofox integration contract's "

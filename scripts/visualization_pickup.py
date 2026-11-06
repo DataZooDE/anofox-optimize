@@ -13,7 +13,8 @@ anofox_visualization in a stock DuckDB CLI and checks, each in a fresh process:
   1. both extensions load in either order, and `anofox_contract_version()`
      (registered by whichever loads first) exists once and returns '1';
   2. discovery: the tagged optimize producers are exactly EXPECTED_PRODUCERS (the
-     long forms without a contract schema yet carry no contract tag),
+     long forms produce assignment, schedule, selection, sequence or weights,
+     the objectives summary),
      and the visualization has the plot macro for each one's schema;
   3. every producer's output renders: `anofox_plot(t)` is an SVG with no
      render warning, and it is the same SVG as the schema's own macro, so the
@@ -22,7 +23,10 @@ anofox_visualization in a stock DuckDB CLI and checks, each in a fresh process:
      the assignment plot facets by model_id only, so two groups' bin 1 would
      stack into one bar. A schedule's groups are its resources (one lane each);
   4. the values survive: every item is a block of its size, and every job is a
-     bar with its own start, end, status and due date.
+     bar with its own start, end, status and due date; a selection is a bar
+     per item of its measure, coloured by whether it was picked; a sequence is
+     a step per position labelled "position · item" at its cumulative setup;
+     an allocation is a segment per item of its weight in its algorithm's bar.
 
     python3 scripts/visualization_pickup.py \\
         build/release/extension/anofox_optimize/anofox_optimize.duckdb_extension
@@ -55,14 +59,17 @@ EXPECTED_PRODUCERS = {
     for base, schema in (("pack_by", "assignment"), ("pack_objectives_by", "summary"),
                          ("wave_by", "assignment"), ("wave_objectives_by", "summary"),
                          ("schedule_by", "schedule"), ("schedule_objectives_by", "summary"),
-                         ("knapsack_objectives_by", "summary"), ("sequence_objectives_by", "summary"),
-                         ("assortment_objectives_by", "summary"), ("assortment_recapture_objectives_by", "summary"),
-                         ("portfolio_objectives_by", "summary"))
+                         ("knapsack_by", "selection"), ("knapsack_objectives_by", "summary"),
+                         ("sequence_by", "sequence"), ("sequence_objectives_by", "summary"),
+                         ("assortment_by", "selection"), ("assortment_objectives_by", "summary"),
+                         ("assortment_recapture_by", "selection"), ("assortment_recapture_objectives_by", "summary"),
+                         ("portfolio_by", "weights"), ("portfolio_objectives_by", "summary"))
     for prefix in ("opt_", "anofox_optimize_")
 }
 
 SCHEMA_MACRO = {"assignment": "anofox_plot_assignment", "schedule": "anofox_plot_schedule",
-                "summary": "anofox_plot_summary"}
+                "summary": "anofox_plot_summary", "selection": "anofox_plot_selection",
+                "sequence": "anofox_plot_sequence", "weights": "anofox_plot_weights"}
 
 DEFAULT_VIZ_REPO = "https://datazoode.github.io/anofox-visualization/extensions"
 
@@ -105,17 +112,23 @@ CALLS = {
     "opt_wave_objectives_by": f"opt_wave_objectives_by({WAVE})",
     "opt_schedule_by": f"opt_schedule_by({SCHEDULE})",
     "opt_schedule_objectives_by": f"opt_schedule_objectives_by({SCHEDULE})",
+    "opt_knapsack_by": f"opt_knapsack_by({KNAPSACK})",
     "opt_knapsack_objectives_by": f"opt_knapsack_objectives_by({KNAPSACK})",
+    "opt_sequence_by": f"opt_sequence_by({SEQUENCE})",
     "opt_sequence_objectives_by": f"opt_sequence_objectives_by({SEQUENCE})",
+    "opt_assortment_by": f"opt_assortment_by({ASSORTMENT})",
     "opt_assortment_objectives_by": f"opt_assortment_objectives_by({ASSORTMENT})",
+    "opt_assortment_recapture_by": f"opt_assortment_recapture_by({ASSORTMENT})",
     "opt_assortment_recapture_objectives_by": f"opt_assortment_recapture_objectives_by({ASSORTMENT})",
+    "opt_portfolio_by": f"opt_portfolio_by({PORTFOLIO})",
     "opt_portfolio_objectives_by": f"opt_portfolio_objectives_by({PORTFOLIO})",
 }
 # The column a producer's plots are split by (one plot per value), or None for one plot.
 PLOT_PER = {"opt_pack_by": "site", "opt_wave_by": "site", "opt_pack_objectives_by": "site",
             "opt_wave_objectives_by": "site", "opt_schedule_objectives_by": "line",
-            **{f"opt_{f}_objectives_by": "shop"
-               for f in ("knapsack", "sequence", "assortment", "assortment_recapture", "portfolio")}}
+            **{f"opt_{f}{kind}": "shop"
+               for f in ("knapsack", "sequence", "assortment", "assortment_recapture", "portfolio")
+               for kind in ("_by", "_objectives_by")}}
 
 # Both renders get the same size: anofox_plot and the schema macros have different default sizes.
 SIZE = "width := 640, height := 400"
@@ -222,6 +235,12 @@ class Pickup:
                     self.assignment_values(label, auto, data)
                 elif schema == "schedule":
                     self.schedule_values(label, auto, data)
+                elif schema == "selection":
+                    self.selection_values(label, auto, data)
+                elif schema == "sequence":
+                    self.sequence_values(label, auto, data)
+                elif schema == "weights":
+                    self.weights_values(label, auto, data)
             if per:
                 self.check(f"{producer}: one plot per {per}", len(rows) >= 2, str([r["part"] for r in rows]))
 
@@ -245,6 +264,40 @@ class Pickup:
         late = sum(1 for d in data if d["status"] == "late")
         caption = f"{len(data)} tasks on {len(resources)} resources · {late} late"
         self.check(f"{label}: the caption counts the tasks and late jobs", caption in svg, caption)
+
+    def selection_values(self, label: str, svg: str, data: list[dict]) -> None:
+        flag = "selected" if "selected" in data[0] else "listed"
+        # the bar's measure: value, else margin x demand (an assortment's expected margin)
+        measure = (lambda d: d["value"]) if "value" in data[0] else (lambda d: d["margin"] * d["demand"])
+        bars = [(m.group(2), m.group(3), m.group(1), round(float(m.group(4)), 9)) for m in
+                re.finditer(r'<rect[^>]*fill="([^"]*)"[^>]*data-x="([^"]*)" data-series="([^"]*)" '
+                            r'data-value="([^"]*)"', svg)]
+        want = Counter((str(d["item"]), flag if d[flag] else f"not {flag}", round(measure(d), 9)) for d in data)
+        self.check(f"{label}: every item a bar of its measure, {flag} or not ({sum(want.values())})",
+                   Counter((x, s, v) for x, s, _, v in bars) == want,
+                   f"svg {sorted(Counter((x, s, v) for x, s, _, v in bars).items())[:4]}…, "
+                   f"table {sorted(want.items())[:4]}…")
+        fills = {s: {f for _, s2, f, _ in bars if s2 == s} for s in (flag, f"not {flag}")}
+        self.check(f"{label}: {flag} and not {flag} each have their own colour ({fills})",
+                   all(len(f) == 1 for f in fills.values()) and fills[flag] != fills[f"not {flag}"])
+
+    def sequence_values(self, label: str, svg: str, data: list[dict]) -> None:
+        points = Counter((m.group(1), round(float(m.group(2)), 9)) for m in
+                         re.finditer(r'<circle[^>]*data-x="([^"]*)" data-value="([^"]*)"', svg))
+        want = Counter((f"{d['position']} · {d['item']}", round(d["cumulative_setup"], 9)) for d in data)
+        self.check(f"{label}: every step labelled position · item at its cumulative setup ({sum(want.values())})",
+                   points == want, f"svg {sorted(points.items())[:4]}…, table {sorted(want.items())[:4]}…")
+        lines = len(re.findall(r'<polyline[^>]*data-geom="step"', svg))
+        models = len({d["model_id"] for d in data})
+        self.check(f"{label}: one step line per algorithm ({models})", lines == models, f"{lines} step lines")
+
+    def weights_values(self, label: str, svg: str, data: list[dict]) -> None:
+        # several algorithms: one 100 % bar per algorithm (x), a segment per item (series) of its weight
+        segments = Counter((m.group(1), m.group(2), round(float(m.group(3)), 9)) for m in
+                           re.finditer(r'<rect[^>]*data-x="([^"]*)" data-series="([^"]*)" data-value="([^"]*)"', svg))
+        want = Counter((d["model_id"], str(d["item"]), round(d["weight"], 9)) for d in data)
+        self.check(f"{label}: every item a segment of its weight in its algorithm's bar ({sum(want.values())})",
+                   segments == want, f"svg {sorted(segments.items())[:4]}…, table {sorted(want.items())[:4]}…")
 
 
 def main() -> int:

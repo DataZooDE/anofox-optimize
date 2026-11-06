@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+The other families' decisions plot too: anofox-visualization v2026.11.5 has a schema for each.
+
+### Added
+
+- **`selection`, `sequence` and `weights` producers** (#19, #20): the long forms are tagged in
+  `duckdb_functions()` with `anofox.contract = '1'` and the schema they already returned, so `anofox_plot(t)`
+  draws them. No column changes.
+  - `knapsack_by`, `assortment_by` and `assortment_recapture_by` return `selection`: a bar per item, picked or not;
+  - `sequence_by` returns `sequence`: a step line of the cumulative setup, one step per position and item;
+  - `portfolio_by` returns `weights`: the weight per asset.
+- The visualization pickup check renders these five and checks their values: every item a bar of its measure
+  and its picked flag, every step at its cumulative setup, every asset a segment of its weight.
+
 ## v2026.10.26
 
 **Breaking:** every index the solvers return is a 1-based BIGINT, the SQL convention (#7). Producers gain `row_order`.

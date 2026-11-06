@@ -104,17 +104,21 @@ Every producer exists as `anofox_optimize_*` and as `opt_*`.
 
 ## The other families (PR 2)
 
-There is no contract schema yet for the other families' decisions, so
-their long forms carry only `anofox.family`. They get a contract tag once
-the visualization has a schema for them. Their objectives are tagged
-`summary` and plot today.
+anofox-visualization v2026.11.5 added three schemas for the other
+families' decisions (anofox-visualization#499): `selection`
+(`anofox_plot_selection`: model_id, item, selected | listed, value, weight,
+capacity, margin, demand), `sequence` (`anofox_plot_sequence`: model_id,
+position, item, setup, cumulative_setup) and `weights`
+(`anofox_plot_weights`: model_id, item, weight, expected_return). The long
+forms already had those columns, so they are tagged with no column change
+(#19, #20). Their objectives are tagged `summary`.
 
-| Producer | Long form (untagged) | Objectives (`summary`) |
+| Producer | Long form | Objectives (`summary`) |
 |---|---|---|
-| `knapsack_by(data, item_col, value_col, weight_col, capacity [, …])` | item, value, weight, selected, capacity | items_selected, total_value, total_weight |
-| `sequence_by(data, item_col, setup_data [, …])` | position, item, setup, cumulative_setup | total_setup |
-| `assortment_by` / `assortment_recapture_by(data, item_col, margin_col, demand_col, substitution_data, shelf [, …])` | item, margin, demand, listed | captured_margin, items_listed |
-| `portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap [, …])` | item, expected_return, weight | expected_return, holdings, sharpe, volatility |
+| `knapsack_by(data, item_col, value_col, weight_col, capacity [, …])` | `selection`: item, value, weight, selected, capacity | items_selected, total_value, total_weight |
+| `sequence_by(data, item_col, setup_data [, …])` | `sequence`: position, item, setup, cumulative_setup | total_setup |
+| `assortment_by` / `assortment_recapture_by(data, item_col, margin_col, demand_col, substitution_data, shelf [, …])` | `selection`: item, margin, demand, listed | captured_margin, items_listed |
+| `portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap [, …])` | `weights`: item, expected_return, weight | expected_return, holdings, sharpe, volatility |
 
 **A matrix is a pairs table with the columns `from_id, to_id, value`.**
 This holds in every family; `setup_data` in `schedule_by` uses the same
@@ -145,9 +149,10 @@ anofox_visualization in the official DuckDB v1.5.6 CLI and checks:
 
 1. both load orders work, and `anofox_contract_version()` exists once and
    returns `'1'`;
-2. the tagged producers are exactly the expected twelve, and the
-   visualization has `anofox_plot_assignment`, `anofox_plot_schedule` and
-   `anofox_plot_summary`;
+2. the tagged producers are exactly the expected 32 (16 per prefix), and the
+   visualization has `anofox_plot_assignment`, `anofox_plot_schedule`,
+   `anofox_plot_selection`, `anofox_plot_sequence`, `anofox_plot_weights`
+   and `anofox_plot_summary`;
 3. for every producer, `anofox_plot(t)` is an SVG with no `data-warnings`,
    is the same SVG as the schema's own macro, and draws every model;
 4. a comparison of several algorithms plots in one table.
