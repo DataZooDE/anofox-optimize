@@ -31,7 +31,12 @@ option to move away from — hence `opt_pack_next_fit`.
   functions, so a member that quietly returns an over-capacity packing
   simply wins. `test/sql/packing.test` checks feasibility for *every*
   algorithm: one assignment per item, bin ids in range, no bin over
-  capacity, never below the theoretical lower bound.
+  capacity, never below the theoretical lower bound. A bin, wave or
+  knapsack selection fits when its sizes, summed in item order with
+  `list_sum` in doubles, are within capacity, with no tolerance. A checker
+  must use the same ordered sum: an unordered SQL `sum()` has no defined
+  order, and in doubles 0.1 + 0.2 + 0.3 is 0.6000000000000001 while
+  0.3 + 0.2 + 0.1 is 0.6. Every member once returned such a bin.
 - **Never accept nonsense silently.** Negative and non-finite sizes each
   produced confident wrong answers before they were rejected.
 - **A family must name its objective when another family shares its

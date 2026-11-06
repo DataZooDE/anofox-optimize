@@ -4,7 +4,7 @@
 
 ### Changed
 
-- **"Fits" in `knapsack_*` is strict in doubles, as in `pack_*`**: the selected weights, summed in item
+- **"Fits" in `knapsack_*` is strict in doubles**: the selected weights, summed in item
   order in doubles, are at most the capacity, with no tolerance, and `total_weight` is exactly that sum
   (what a SQL `list_sum` over the selected weights in item order returns). So
   `opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3)` now takes one item, value 1, not both: 0.1 + 0.2 is
@@ -27,6 +27,18 @@
   steps of 0.1 that happened on about one row in ten. `knapsack_greedy_ratio` and `knapsack_greedy_value`
   were over on about one in 25 there too: they checked a running load summed in their own order, while
   `total_weight` sums in item order, and the two can differ in the last bit.
+- **No `pack_*` bin and no `wave_*` wave is over capacity in item order any more.** The rule is now one for
+  every family, stated in AGENTS.md: a bin, wave or knapsack selection fits when its sizes, summed in item
+  order with `list_sum` in doubles, are within capacity, and a checker must use that ordered sum, since an
+  unordered `sum()` has no defined order. The members tracked a running load in placement order, so
+  `opt_pack_first_fit_decreasing([0.1, 0.2, 0.3], 0.6)` put all three in one bin (0.3 + 0.2 + 0.1 is 0.6,
+  but 0.1 + 0.2 + 0.3 is 0.6000000000000001) and `opt_wave_priority_first` likewise. Every member now ends
+  in one shared repair (`src/include/item_order_fit.hpp`): while a bin or wave is over, its smallest item
+  (for waves, its lowest-priority order) moves to the first other one it fits, else to a new one. Ids stay
+  1-based and contiguous, and `avg_weighted_wave` is computed from the final waves. On 2000 sets of twelve
+  sizes in steps of 0.1 at capacity 1.0, the repair added one bin on 2 sets for four pack members and none
+  for `pack_best_of`, and one wave on 2 sets for `wave_fewest_waves`; on integer sizes no result changed.
+  `pack_local_search` re-sums a bin after a move instead of adding and subtracting.
 
 ## v2026.11.6
 

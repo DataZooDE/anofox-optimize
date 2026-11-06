@@ -8,6 +8,16 @@
 **Problem.** Given item sizes and a bin capacity, assign every item to a bin
 so that no bin exceeds capacity, using as few bins as possible.
 
+**What "fits" means.** A bin fits when its sizes, summed in item order (the
+order of the input list) in doubles, are at most the capacity, with no
+tolerance: `list_sum(list(size ORDER BY item))`, never an unordered `sum()`.
+The same rule holds for `wave_*` and `knapsack_*`. The members place items
+by a running load summed in their own order, which can differ in the last
+bit (largest first, 0.3 + 0.2 + 0.1 is 0.6; in item order 0.1 + 0.2 + 0.3 is
+0.6000000000000001), so every member ends by moving the smallest item out of
+any bin that is over, into the first bin it fits, else a new one. On
+integer sizes this never changes anything.
+
 **Hardness.** NP-hard. Deciding whether a set fits in two bins is already
 equivalent to partition.
 
@@ -77,8 +87,8 @@ heuristic and usually good. Its worst case is well known: with capacity 10
 and items (value 10, weight 10) and (value 6, weight 6), ratio ties them and
 may take the 6.
 
-"Fits" is the strict comparison `pack_*` uses, with no tolerance, applied to
-the selected weights summed in item order in doubles. Every member
+"Fits" is the rule of `pack_*` above: the selected weights, summed in item
+order in doubles, are at most the capacity, with no tolerance. Every member
 returns such an answer, and its `total_weight` is that sum, the same number
 a SQL `list_sum` over the selected weights in item order returns (in
 `knapsack_by`, item order is the order of `item_col`). So 0.1 and 0.2 do not

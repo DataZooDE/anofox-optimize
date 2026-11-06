@@ -30,7 +30,9 @@ SELECT count(*) FROM r WHERE len(v.wave) <> len(items) OR list_min(v.wave) < 1;
 0
 
 # No wave exceeds capacity, for any algorithm. An algorithm that silently
-# overfilled a wave would simply win an optimising search.
+# overfilled a wave would simply win an optimising search. A wave fits when
+# its sizes, summed in ITEM order in doubles, are within capacity; an
+# unordered sum() has no defined order, so the check uses an ordered list_sum.
 query I
 WITH r AS (
   SELECT 'as_given' algo, opt_wave_as_given(items,prio,cap) v, items, cap FROM b
@@ -40,7 +42,7 @@ WITH r AS (
   UNION ALL SELECT 'best_of', opt_wave_best_of(items,prio,cap), items, cap FROM b
 ),
 loads AS (
-  SELECT algo, v.wave[i] AS w, sum(items[i]) AS load, any_value(cap) AS cap
+  SELECT algo, v.wave[i] AS w, list_sum(list(items[i] ORDER BY i)) AS load, any_value(cap) AS cap
   FROM r, generate_series(1, len(items)) g(i)
   GROUP BY algo, v.wave[i]
 )
@@ -73,3 +75,53 @@ statement error
 SELECT opt_wave_priority_first([1.0,2.0]::DOUBLE[], [1.0]::DOUBLE[], 7.0);
 ----
 were required
+
+# ── decimal sizes: every wave fits in item order ────────────────────────────
+
+# 2000 sets of 12 orders, sizes from 0.1 to 0.9, at a capacity of 1.0. Packed
+# by priority, 0.3 + 0.2 + 0.1 is 0.6, but in item order 0.1 + 0.2 + 0.3 is
+# 0.6000000000000001; members once returned waves over capacity that way on
+# up to 31 of these sets. Waves stay 1-based and contiguous, and
+# avg_weighted_wave is the objective of the waves returned.
+query II
+SELECT opt_wave_priority_first([0.1, 0.2, 0.3]::DOUBLE[], [1.0, 2.0, 3.0]::DOUBLE[], 0.6).wave,
+       opt_wave_priority_first([0.1, 0.2, 0.3]::DOUBLE[], [1.0, 2.0, 3.0]::DOUBLE[], 0.6).avg_weighted_wave;
+----
+[2, 1, 1]	1.1666666666666667
+
+statement ok
+CREATE TABLE dec AS
+SELECT g, list((1 + hash(g, k) % 9)::DOUBLE / 10 ORDER BY k) AS items,
+       list((1 + hash(g, k, 'p') % 9)::DOUBLE ORDER BY k) AS prio
+FROM range(0, 2000) a(g), range(0, 12) b(k) GROUP BY g;
+
+statement ok
+CREATE TABLE dec_results AS
+SELECT g, items, prio, unnest(['as_given', 'priority_first', 'priority_density', 'fewest_waves', 'best_of']) AS algo,
+       unnest([opt_wave_as_given(items, prio, 1.0), opt_wave_priority_first(items, prio, 1.0),
+               opt_wave_priority_density(items, prio, 1.0), opt_wave_fewest_waves(items, prio, 1.0),
+               opt_wave_best_of(items, prio, 1.0)]) AS v
+FROM dec;
+
+query I
+SELECT count(*) FILTER (load > 1.0) FROM (
+  SELECT g, algo, v.wave[i] AS w, list_sum(list(items[i] ORDER BY i)) AS load
+  FROM dec_results, generate_series(1, 12) t(i) GROUP BY ALL);
+----
+0
+
+query II
+SELECT count(*), count(*) FILTER (len(list_distinct(v.wave)) = list_max(v.wave) AND list_min(v.wave) = 1
+                                  AND abs(v.avg_weighted_wave - list_sum(list_transform(v.wave, lambda w, i: w * prio[i]))
+                                          / list_sum(prio)) < 1e-12)
+FROM dec_results;
+----
+10000	10000
+
+# best_of still never loses to a member, judged on the repaired waves.
+query I
+SELECT count(*) FROM (SELECT g, min(v.avg_weighted_wave) FILTER (algo <> 'best_of') AS m,
+                             any_value(v.avg_weighted_wave) FILTER (algo = 'best_of') AS b
+                      FROM dec_results GROUP BY g) WHERE b > m;
+----
+0
