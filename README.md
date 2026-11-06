@@ -64,7 +64,9 @@ FROM shipments;
 
 Two functions return a **proven optimum** and say so in their names:
 `knapsack_exact` and `schedule_exact`. Knapsack's guarantee needs weights in
-multiples of 0.0001 and a table within its limits, and `knapsack_best_of` is
+multiples of 0.0001 whose sums are exact in doubles (a selection fits when its
+weights, summed in doubles, are within capacity, so 0.1 + 0.2 does not fit
+0.3) and a table within its limits, and `knapsack_best_of` is
 exact only inside those limits; see
 [docs/theory/02](docs/theory/02-packing-and-knapsack.md#knapsack-knapsack_).
 Everything else is heuristic and comes with no guarantee attached.

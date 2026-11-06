@@ -1,5 +1,33 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- **"Fits" in `knapsack_*` is strict in doubles, as in `pack_*`**: the selected weights, summed in item
+  order in doubles, are at most the capacity, with no tolerance, and `total_weight` is exactly that sum
+  (what a SQL `list_sum` over the selected weights in item order returns). So
+  `opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3)` now takes one item, value 1, not both: 0.1 + 0.2 is
+  0.30000000000000004 in doubles. When the DP's answer fills the capacity in 0.0001 units but sums over it
+  in doubles, `knapsack_exact` and `knapsack_best_of` drop the item whose removal costs least, or take the
+  best selection one unit lighter, which the table already holds, if that is worth more. `knapsack_exact`
+  also runs both greedy members and never returns less than they do. Its proven optimum now needs weights
+  and capacity in multiples of 0.0001 whose sums are exact in doubles (integers, halves, quarters); on
+  1,000 instances with weights in steps of 0.1 it fell short of the strict optimum on 10. Integer-weight
+  results are unchanged.
+- **`anofox_optimize_knapsack_max_memory` defaults to `'64MB'` in DuckDB-Wasm** (still `'512MB'` natively).
+  The DP table is a plain allocation outside DuckDB's buffer manager, and in DuckDB-Wasm every thread
+  allocates from one shared 32-bit heap of 2–4 GB, so a few threads' 512MB tables could crash the page.
+
+### Fixed
+
+- **No knapsack member returns `total_weight > capacity` in doubles any more.** `knapsack_exact` and
+  `knapsack_best_of` took `[0.1, 0.2]` at capacity 0.3 and reported a `total_weight` of
+  0.30000000000000004, which a strict checker calls infeasible; on a 1,000-instance sweep of weights in
+  steps of 0.1 that happened on about one row in ten. `knapsack_greedy_ratio` and `knapsack_greedy_value`
+  were over on about one in 25 there too: they checked a running load summed in their own order, while
+  `total_weight` sums in item order, and the two can differ in the last bit.
+
 ## v2026.11.6
 
 The wasm build loads in DuckDB-Wasm (#9), and the community registry builds `wasm_eh` and, again, DuckDB

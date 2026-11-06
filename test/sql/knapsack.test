@@ -201,16 +201,16 @@ WHERE b.total_value <> greatest(e.total_value, r.total_value, gv.total_value);
 ----
 0
 
-# The sweep separates the members both ways. The DP beats both greedy members
-# on some rows; on others greedy wins, because the DP optimizes the weights
-# ROUNDED UP to 0.0001 and so gives away capacity. That is the price of
-# feasibility, and best_of keeps whichever is better.
+# The DP beats both greedy members on some rows. On others greedy would win,
+# because the DP optimizes the weights ROUNDED UP to 0.0001 and so gives away
+# capacity; exact also runs the greedy members and keeps the better answer,
+# so it never loses to them.
 query II
 SELECT count(*) FILTER (e.total_value > greatest(r.total_value, gv.total_value)) > 0,
-       count(*) FILTER (e.total_value < greatest(r.total_value, gv.total_value)) > 0
+       count(*) FILTER (e.total_value < greatest(r.total_value, gv.total_value))
 FROM fine_solved;
 ----
-true	true
+true	0
 
 # ── best_of skips the DP only when greedy is provably optimal ───────────────
 
@@ -289,12 +289,98 @@ SELECT count(*), count(*) FILTER (tw > cap) FROM (
 ----
 7	0
 
-# Decimal weights still reach the optimum: 0.1 + 0.2 fits a capacity of 0.3.
-query RR
+# "Fits" is strict in doubles, as in pack_*: the weights, summed in item order,
+# are at most the capacity. In doubles 0.1 + 0.2 is 0.30000000000000004, over a
+# capacity of 0.3, so taking both is infeasible even though the DP's whole
+# units (1 + 2 <= 3) say otherwise. Every member takes one item, and the
+# reported total_weight is the sum the check used.
+query RRRRRRRR
 SELECT opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
-       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value;
+       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_greedy_ratio([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_greedy_value([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_greedy_ratio([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_greedy_value([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3;
 ----
-2.0	2.0
+1.0	1.0	1.0	1.0	true	true	true	true
+
+# A sweep of decimal weights (0.0 to 1.0 in steps of 0.1) at decimal
+# capacities (1.0 to 3.9), where selections that fill the capacity exactly
+# in decimal arithmetic are common and about one in ten sums over it in
+# doubles. Every member, and knapsack_by's default, stays within capacity in
+# doubles, and total_weight equals a SQL list_sum of the selected weights in
+# item order.
+statement ok
+CREATE TABLE dec AS
+SELECT g, k, (1 + hash(g, k, 'v') % 20)::DOUBLE AS val,
+       round((hash(g, k, 'w') % 1000)::DOUBLE / 1000 * 10, 0) / 10 AS kg,
+       (10 + hash(g, 'c') % 30)::DOUBLE / 10 AS cap
+FROM range(0, 1000) a(g), range(0, 10) b(k);
+
+statement ok
+CREATE TABLE dec_solved AS
+WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w, any_value(cap) AS cap FROM dec GROUP BY g)
+SELECT g, v, w, cap, opt_knapsack_exact(v, w, cap) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+       opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
+FROM l;
+
+query IIIIII
+SELECT count(*), count(*) FILTER (e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
+       count(*) FILTER (r.total_weight <= cap), count(*) FILTER (gv.total_weight <= cap),
+       count(*) FILTER (list_sum(list_filter(w, lambda x, i: e.selected[i])) IS NOT DISTINCT FROM e.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: b.selected[i])) IS NOT DISTINCT FROM b.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: r.selected[i])) IS NOT DISTINCT FROM r.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: gv.selected[i])) IS NOT DISTINCT FROM gv.total_weight)
+FROM dec_solved;
+----
+1000	1000	1000	1000	1000	1000
+
+# knapsack_by takes one capacity per call, so its default (best_of) runs the
+# same groups at a capacity of 2.0; the DP's answer sums over it in doubles on
+# some of them.
+query II
+SELECT count(*), count(*) FILTER (tw <= 2.0) FROM (
+  SELECT g, coalesce(list_sum(list(weight ORDER BY item) FILTER (selected)), 0) AS tw
+  FROM opt_knapsack_by('dec', 'k', 'val', 'kg', 2.0, group_col := 'g') GROUP BY g);
+----
+1000	1000
+
+# The optimum by brute force over every subset, once with the weights summed
+# in DECIMAL (the decimal optimum) and once summed in doubles in item order
+# (the strict optimum). The fixture is not degenerate: on some rows the
+# decimal optimum is not feasible in doubles. No member ever beats the strict
+# optimum, which an over-capacity answer could.
+statement ok
+CREATE TABLE dec_brute AS
+SELECT g, max(tv) FILTER (dw <= cap::DECIMAL(18, 1)) AS decimal_optimum, max(tv) FILTER (fw <= cap) AS strict_optimum
+FROM (SELECT g, cap, list_sum(list_filter(v, lambda x, i: (mask >> (i - 1)) & 1 = 1)) AS tv,
+             list_sum(list_filter(w, lambda x, i: (mask >> (i - 1)) & 1 = 1)) AS fw,
+             list_sum(list_transform(list_filter(w, lambda x, i: (mask >> (i - 1)) & 1 = 1),
+                                     lambda x: x::DECIMAL(18, 1))) AS dw
+      FROM dec_solved, range(0, 1024) m(mask))
+GROUP BY g;
+
+query III
+SELECT count(*) FILTER (decimal_optimum > strict_optimum) > 0,
+       count(*) FILTER (greatest(e.total_value, b.total_value, r.total_value, gv.total_value) > strict_optimum),
+       count(*) FILTER (b.total_value < greatest(e.total_value, r.total_value, gv.total_value))
+FROM dec_solved JOIN dec_brute USING (g);
+----
+true	0	0
+
+# exact is NOT always the strict optimum on such weights, and the description
+# says so. The DP's answer sums over the capacity on about 100 of these rows.
+# Dropping its cheapest item alone falls short of the strict optimum on 23;
+# also reading back the best selection one unit lighter, which the table
+# already holds, brings that to 10. The greedy members fall short on 136.
+query III
+SELECT count(*) FILTER (e.total_value < strict_optimum), count(*) FILTER (b.total_value < strict_optimum),
+       count(*) FILTER (greatest(r.total_value, gv.total_value) < strict_optimum)
+FROM dec_solved JOIN dec_brute USING (g);
+----
+10	10	136
 
 # A tiny positive weight never snaps to 0 table units: the tolerance is
 # relative to the weight, not absolute.
@@ -346,10 +432,13 @@ true	true
 
 # ── the DP memory budget ────────────────────────────────────────────────────
 
+# The default is 512MB natively and 64MB in DuckDB-Wasm, where every
+# thread's table comes out of one shared 32-bit heap.
 query T
-SELECT current_setting('anofox_optimize_knapsack_max_memory');
+SELECT current_setting('anofox_optimize_knapsack_max_memory')
+       = CASE WHEN (SELECT starts_with(platform, 'wasm') FROM pragma_platform()) THEN '64MB' ELSE '512MB' END;
 ----
-512MB
+true
 
 # The classic fixture scaled to an ~6.4 MB table: within the default budget,
 # exact and best_of both find the optimum of 8 that greedy misses.

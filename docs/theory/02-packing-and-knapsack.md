@@ -77,12 +77,26 @@ heuristic and usually good. Its worst case is well known: with capacity 10
 and items (value 10, weight 10) and (value 6, weight 6), ratio ties them and
 may take the 6.
 
+"Fits" is the strict comparison `pack_*` uses, with no tolerance, applied to
+the selected weights summed in item order in doubles. Every member
+returns such an answer, and its `total_weight` is that sum, the same number
+a SQL `list_sum` over the selected weights in item order returns (in
+`knapsack_by`, item order is the order of `item_col`). So 0.1 and 0.2 do not
+both fit a capacity of 0.3: in doubles they sum to 0.30000000000000004.
+
 **`exact`** — dynamic programming over capacity. Returns the proven optimum
-when every weight and the capacity are whole multiples of 0.0001. Finer
-weights are rounded **up** to the next 0.0001 and the capacity down, so the
-answer always fits but is optimal only for the rounded-up weights; a greedy
-member working on the true weights can then beat it. Items heavier than the
-capacity are never taken and play no part in the scaling.
+when every weight and the capacity are whole multiples of 0.0001 and their
+sums are exact in doubles (integers, halves, quarters). Finer weights are
+rounded **up** to the next 0.0001 and the capacity down, so the answer is
+optimal only for the rounded-up weights. Decimal weights such as 0.1 can fill
+the capacity exactly in 0.0001 units yet sum over it in doubles; `exact`
+then drops the item whose removal costs least, or takes the best selection
+one unit lighter, which the table already holds, if that is worth more. That
+can miss a selection that fills the capacity and does fit: on a sweep of
+1,000 instances with weights in steps of 0.1 it fell short of the strict
+optimum on 10. `exact` also runs both greedy members and never returns less
+than they do. Items heavier than the capacity are never taken and play no
+part in the scaling.
 Cost is O(n · capacity) time and memory, so it scales with the *numeric*
 capacity, not just the item count. A capacity of 1,000 with 60 items is
 trivial; a capacity of 10^9 is not. The table has items × (capacity + 1)
@@ -92,17 +106,19 @@ capacity unit plus one bit per cell. `exact` **raises** when the table is
 over 50 million cells, or over the memory budget set with
 
 ```sql
-SET anofox_optimize_knapsack_max_memory = '2GB';   -- default '512MB'
+SET anofox_optimize_knapsack_max_memory = '2GB';   -- default '512MB', '64MB' in DuckDB-Wasm
 ```
 
-The error names whichever limit was hit.
+The error names whichever limit was hit. The table lives outside DuckDB's
+buffer manager, so in DuckDB-Wasm, where every thread allocates from one
+shared 32-bit heap, the default is 64MB rather than 512MB.
 
 **`best_of`** — runs both greedy members and, when `exact` would accept the
 instance (the same two limits: 50 million cells and the memory budget),
-`exact` too, and keeps the most valuable answer. Inside the limits it is the
-proven optimum when every weight and the capacity are whole multiples of
-0.0001, and otherwise as good as the better of `exact` on rounded-up weights
-and the greedy members. Over either
+`exact` too, and keeps the most valuable answer. Inside the limits it has
+`exact`'s value and its guarantee: the proven optimum when every weight and
+the capacity are whole multiples of 0.0001 with sums exact in doubles, and
+otherwise possibly short of it, as above. Over either
 limit it does not raise like `exact` does: it returns the best greedy answer,
 which is **not** exact. A caller who needs a guarantee must still ask for
 `exact`, which raises instead of degrading.
