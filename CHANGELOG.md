@@ -23,9 +23,14 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
 
 - **DuckDB-Wasm runtime test** (`test/wasm`, from anofox-forecast): the whole `test/sql` suite runs in
   DuckDB-Wasm under Node against the v1.5.6 `wasm_eh` artifact, and the v1.5.6 deploy waits for it.
-  After each wasm upload the deploy job downloads what it published, checks the section count and runs
-  `test/wasm/post_upload_smoke.test` on it (`scripts/extension-verify-upload.sh`). `make audit` runs
-  the section walker's self-test, and `make test_wasm` runs the suite against `build/wasm_eh`.
+  The harness compares the way DuckDB's own runner does: integers exactly (BIGINT keeps its precision),
+  text exactly, doubles within 1e-9 relative, by each column's real type. It checks column and row
+  counts first, and fails on any record keyword it does not support or any record that runs over 60 s.
+  `extension-upload.sh` LOADs the exact bytes and runs `test/wasm/post_upload_smoke.test` on them
+  before the first upload, so an artifact that fails never reaches the versioned or latest path.
+  After the upload the deploy job checks what it published again (`scripts/extension-verify-upload.sh`).
+  `make audit` runs the self-tests of the section walker and of the comparator, and `make test_wasm`
+  runs the suite against `build/wasm_eh`.
 - **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
   because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
   message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).

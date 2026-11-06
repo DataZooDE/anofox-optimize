@@ -32,7 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { parseTest, runRecords } from './sqllogic.mjs';
+import { parseTest, runRecords, RECORD_TIMEOUT_MS } from './sqllogic.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '..', '..');
@@ -47,6 +47,12 @@ const EXT_FILE = `${EXT_NAME}.duckdb_extension.wasm`;
 // never merely because it fails. Empty: every anofox_optimize test is pure
 // in-memory SQL with no second extension.
 const SKIP_FILES = new Map([]);
+
+// Per-record timeout. A record that hangs fails the run naming its file and
+// line instead of running into the CI job's timeout. The hung query keeps the
+// worker busy, so a timeout aborts the run. ANOFOX_WASM_RECORD_TIMEOUT_MS
+// overrides the default (60 s).
+const RECORD_TIMEOUT = Number(process.env.ANOFOX_WASM_RECORD_TIMEOUT_MS) || RECORD_TIMEOUT_MS;
 
 function parseArgs(argv) {
   const args = {
@@ -149,16 +155,16 @@ async function bootEngine(bundle) {
   return { db, worker };
 }
 
-// Adapter: run a SQL string, return rows as arrays of JS cell values.
+// Adapter: run a SQL string, return rows as arrays of JS cell values, read by
+// column index. (Row objects are keyed by name, so `SELECT a, a` would collapse
+// to one column and fail the column-count check for the wrong reason.)
 function makeRunQuery(conn) {
   return async (sql) => {
     const table = await conn.query(sql);
+    const cols = [];
+    for (let c = 0; c < table.numCols; c++) cols.push(table.getChildAt(c));
     const rows = [];
-    for (const row of table.toArray()) {
-      // Arrow row → array of column values in schema order.
-      const obj = row.toJSON();
-      rows.push(Object.values(obj));
-    }
+    for (let r = 0; r < table.numRows; r++) rows.push(cols.map((col) => col.get(r)));
     return rows;
   };
 }
@@ -222,7 +228,7 @@ async function main() {
       log(`Running all ${files.length} test/sql .test files.`);
     }
 
-    let totalPass = 0, totalFail = 0, totalSkip = 0;
+    let totalPass = 0, totalFail = 0, totalSkip = 0, totalUntyped = 0, totalRaw = 0;
     const failedFiles = [];
     for (const rel of files) {
       if (SKIP_FILES.has(rel)) { log(`  ⊘ ${rel} — skipped (${SKIP_FILES.get(rel)})`); continue; }
@@ -239,10 +245,11 @@ async function main() {
       await engine.db.open({ allowUnsignedExtensions: true });
       const c = await engine.db.connect();
       await c.query(`LOAD ${EXT_NAME};`);
-      const r = await runRecords(records, makeRunQuery(c), { file: rel, log });
+      const r = await runRecords(records, makeRunQuery(c), { file: rel, log, timeoutMs: RECORD_TIMEOUT });
       await c.close();
 
       totalPass += r.passed; totalFail += r.failed; totalSkip += r.skipped;
+      totalUntyped += r.untyped; totalRaw += r.raw;
       const mark = r.failed === 0 ? '✓' : '✗';
       log(`  ${mark} ${rel} — ${r.passed} passed, ${r.failed} failed, ${r.skipped} skipped`);
       if (r.failed > 0) failedFiles.push(rel);
@@ -250,6 +257,9 @@ async function main() {
 
     log('──────────────────────────────────────────────');
     log(`Totals: ${totalPass} passed, ${totalFail} failed, ${totalSkip} skipped across ${files.length} files`);
+    // Queries compared by type letter only (DESCRIBE could not bind them), and
+    // queries run unwrapped (the ::VARCHAR wrap did not parse or bind).
+    log(`Comparison: ${totalUntyped} queries without column types, ${totalRaw} run unwrapped`);
     if (totalFail > 0) {
       log(`✗ Failing files: ${failedFiles.join(', ')}`);
       failedHard = true;

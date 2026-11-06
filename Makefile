@@ -13,9 +13,11 @@ test_visualization:
 .PHONY: audit test_wasm
 
 # Build-free checks (#9): the wasm duckdb_signature section walker's self-test,
-# which scripts/extension-upload.sh relies on to guard every wasm upload.
+# which scripts/extension-upload.sh relies on to guard every wasm upload, and
+# the wasm harness comparator's (node builtins only, no npm install needed).
 audit:
 	python3 scripts/wasm_signature_sections.py --self-test
+	node test/wasm/sqllogic.mjs --self-test
 
 # The sqllogictest suite in DuckDB-Wasm under Node (test/wasm/README.md), against
 # a wasm_eh build (`make wasm_eh` with emsdk 3.1.71, the extension-ci-tools pin).

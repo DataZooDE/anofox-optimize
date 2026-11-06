@@ -60,8 +60,9 @@ per-file `✓`/`✗` lines and the totals are the result.
 second extension. Add a file there only if it is structurally infeasible in
 DuckDB-Wasm (filesystem, network, threads), never because it fails.
 
-`test/wasm/post_upload_smoke.test` is the small case the deploy job runs
-against the bytes it just uploaded (`scripts/verify-wasm-artifact.sh`): the
+`test/wasm/post_upload_smoke.test` is the small case the deploy job runs on
+the exact bytes it is about to upload, and again on what it uploaded
+(`scripts/verify-wasm-artifact.sh`): the
 Falkenauer triplet instance with its known spread (first-fit-decreasing 12,
 bin completion 11, optimum 10), a feasibility check, and an `opt_pack_by` row
 count.
@@ -71,7 +72,7 @@ count.
 A wasm_mvp build (emsdk 3.1.71) LOADs under `--bundle mvp` and passes every
 query of the suite, and `post_upload_smoke.test` passes, so the deploy gates
 wasm_mvp on it as forecast does. It is not clean: every error the extension
-raises (all 33 `statement error` records, 2026-11-06) reaches the caller as
+raises (every failure in the suite under `--bundle mvp`, 2026-11-06) reaches the caller as
 `ReferenceError: _setThrew is not defined` instead of its message. The
 statement still fails and the session keeps working, but a wasm_mvp user does
 not see why their input was rejected. The mvp bundle's JS glue does not provide
@@ -95,14 +96,42 @@ lock file), `WASM_HARNESS_ENGINE` in `scripts/verify-wasm-artifact.sh`, and the
 
 ## Parser notes (`sqllogic.mjs`)
 
-A sqllogictest subset, not the real runner: `require` (ignored),
-`statement ok`, `statement error` with the expected message after `----`
-(substring, or `<REGEX>:` matched against the whole message), `query <types>
-[sort]`, `mode skip`/`unskip`, `halt`. Numbers compare within 1e-6 absolute
-or 1e-4 relative; booleans compare as `1`/`0`; results are formatted through
-DuckDB's own `::VARCHAR`. The forecast version folded `----` and the message
-into the SQL of a `statement error` record, so each such record "passed" on a
-syntax error without running the statement; this port splits them.
+A sqllogictest subset, but with the semantics of DuckDB's own runner, so a
+pass here means what a native pass means.
+
+- **Records:** `require` (handled by the harness), `statement ok`,
+  `statement error` with the expected message after `----` (a substring, or
+  `<REGEX>:` matched against the whole message), `query <types>
+  [nosort|rowsort|valuesort] [label]`, `mode skip`/`unskip`, `halt`. Any other
+  keyword (`loop`, `foreach`, `onlyif`, `skipif`, ...) **fails** with its file
+  and line, rather than being skipped and leaving its body unguarded.
+- **Shape first:** the result's column count must equal the length of the type
+  string, and the row count must match. Expected rows are either one per line
+  (tab-separated) or one value per line, as in DuckDB. `N values hashing to
+  <md5>` is supported.
+- **Values:** DuckDB renders them (`COLUMNS(*)::VARCHAR`; `NULL`, `(empty)` for
+  the empty string), and `DESCRIBE` supplies each column's real type. Identical
+  text is equal. Otherwise integers compare exactly as BigInt, BOOLEAN as
+  true/false/1/0, DOUBLE/FLOAT/DECIMAL within 1e-9 relative (DuckDB itself
+  allows 1%), and everything else, text included, only as identical text. The
+  run prints how many queries were compared without types (DESCRIBE failed) or
+  ran unwrapped; both are 0 for the current suite.
+- **Raw retry:** a query is run without the `::VARCHAR` wrap only when the wrap
+  raises a Binder or Parser error, so a runtime error is reported once and
+  never hidden by a second run.
+- **Timeout:** every statement and query has 60 s
+  (`ANOFOX_WASM_RECORD_TIMEOUT_MS` overrides it). A timeout names the file and
+  line and aborts the run, since the hung query still occupies the worker.
+
+`node test/wasm/sqllogic.mjs --self-test` (also in `make audit` and the CI job)
+checks the comparator without booting DuckDB: 100000 vs 100001, BIGINT beyond
+2^53, text `001` vs `1` and a one-column result under `query II` must all fail.
+
+The forecast harness this came from compared any two numbers within 1e-4
+relative (so 100000 matched 100001) and text that parsed as numbers the same
+way, flattened results before checking their shape, and folded a
+`statement error` record's `----` and message into its SQL, so the record
+"passed" on a syntax error without running the statement.
 
 ## Sources
 

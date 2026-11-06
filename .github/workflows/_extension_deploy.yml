@@ -132,8 +132,9 @@ jobs:
           path: |
             /tmp/extension
 
-      # The post-upload check below LOADs wasm artifacts in the DuckDB-Wasm
-      # Node harness (#9).
+      # Needed by the Deploy step for wasm archs (#9): extension-upload.sh LOADs
+      # the exact bytes in the DuckDB-Wasm Node harness BEFORE uploading them,
+      # and the post-upload check LOADs what was published.
       - uses: actions/setup-node@v4
         if: ${{ startsWith(matrix.duckdb_arch, 'wasm') }}
         with:
