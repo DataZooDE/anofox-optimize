@@ -63,13 +63,11 @@ FROM shipments;
 ## Honesty about guarantees
 
 Two functions return a **proven optimum** and say so in their names:
-`knapsack_exact` and `schedule_exact` (knapsack's guarantee holds when the
-weights and capacity are multiples of 0.0001; finer weights are rounded up, so
-the answer always fits). `knapsack_best_of` is also exact whenever
-`knapsack_exact`'s table fits (items × (capacity + 1) ≤ 50 million cells and
-within `anofox_optimize_knapsack_max_memory`, default `'512MB'`), and returns its
-best greedy answer, which is not exact, beyond that. Everything
-else is heuristic and comes with no guarantee attached.
+`knapsack_exact` and `schedule_exact`. Knapsack's guarantee needs weights in
+multiples of 0.0001 and a table within its limits, and `knapsack_best_of` is
+exact only inside those limits; see
+[docs/theory/02](docs/theory/02-packing-and-knapsack.md#knapsack-knapsack_).
+Everything else is heuristic and comes with no guarantee attached.
 
 Each family also ships a deliberately **weak** member (`pack_next_fit`,
 `portfolio_top_return`, `assortment_top_margin`, `sequence_as_given`). You

@@ -21,29 +21,29 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
   counts first, and fails on any record keyword it does not support or any record that runs over 60 s.
   `extension-upload.sh` LOADs the exact bytes and runs `test/wasm/post_upload_smoke.test` on them
   before the first upload, so an artifact that fails never reaches the versioned or latest path.
-  After the upload the deploy job checks what it published again (`scripts/extension-verify-upload.sh`).
+  After the upload the deploy job confirms that what it published is byte-identical to those bytes
+  (`scripts/extension-verify-upload.sh`).
   `make audit` runs the self-tests of the section walker and of the comparator, and `make test_wasm`
   runs the suite against `build/wasm_eh`.
 - **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
   because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
   message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).
 - **`anofox_optimize_knapsack_max_memory`** (default `'512MB'`, DuckDB size strings such as `'2GB'`): the
-  largest table `knapsack_exact` and `knapsack_best_of` build for their dynamic program. The table needs
-  8 bytes per capacity unit plus one bit per cell, so one item at a large capacity could pass the
-  50-million-cell limit and still need hundreds of MB. Over the budget `knapsack_exact` raises, naming
-  the setting and its value; `knapsack_best_of` returns its best greedy answer. NULL, negative and
-  unlimited (`'none'`) values are rejected.
+  largest table `knapsack_exact` and `knapsack_best_of` build for their dynamic program, next to the
+  existing 50-million-cell limit. The table needs 8 bytes per capacity unit plus one bit per cell, so one
+  item at a large capacity could pass the cell limit and still need hundreds of MB. Over the budget
+  `knapsack_exact` raises, naming the setting and its value. NULL, negative and unlimited (`'none'`)
+  values are rejected.
 
 ### Changed
 
-- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact` would accept the instance (at most
-  50 million cells and within `anofox_optimize_knapsack_max_memory`), so it is the proven optimum there
-  for weights in multiples of 0.0001; over either limit it still returns the best greedy answer without
-  raising. `knapsack_by`'s default `['best_of']` is therefore exact on small instances — on a five-crate
-  fixture it went from 31 to the optimum of 36 — and pays the DP's cost once per group. Both functions
-  share one limit check. The DP is skipped when greedy provably is the optimum (every positive-value item
-  fits, nothing fits, or the best-ratio prefix fills the capacity exactly), which helps only on such
-  instances.
+- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact` would accept the instance (both
+  limits above, one shared check), so it is the proven optimum there for weights in multiples of 0.0001;
+  beyond them it still returns the best greedy answer without raising. `knapsack_by`'s default
+  `['best_of']` is therefore exact on small instances — on a five-crate fixture it went from 31 to the
+  optimum of 36 — and pays the DP's cost once per group. The DP is skipped when greedy provably is the
+  optimum (every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity
+  exactly), which helps only on such instances.
 - Items heavier than the capacity no longer influence `knapsack_exact`'s weight scaling, so one
   irrelevant `123.4567` no longer multiplies the table by 10^4.
 
@@ -56,7 +56,7 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
   - `scripts/extension-upload.sh` appended a second `duckdb_signature` section to an artifact that
     already ended with one (`Unknown ABI type of value '208'`). It now replaces the 256-byte placeholder
     in place, as for native binaries, and `scripts/wasm_signature_sections.py check` requires exactly one
-    section before and after signing. Ported from anofox-forecast#272.
+    section before signing and again on the signed artifact. Ported from anofox-forecast#272.
 - **`SET anofox_telemetry_enabled = false` works in every build.** The wasm and MinGW builds, which have no
   telemetry, did not register the `anofox_telemetry_*` options, so the documented opt-out failed with
   "unrecognized configuration parameter". The options now exist everywhere; there they change nothing, and

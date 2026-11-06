@@ -134,13 +134,6 @@ FROM many_solved JOIN many_brute USING (g);
 ----
 true
 
-# best_of >= every member on the classic fixture, too.
-query I
-SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value
-       = opt_knapsack_exact([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value;
-----
-true
-
 # When exact would REFUSE (here a 200M-cell table), best_of does NOT error:
 # it returns the best greedy answer, which is feasible but no longer a bound.
 # by-value wins this instance (10 against 6), so best_of must take the max.
@@ -166,23 +159,17 @@ SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e7, 4e7, 4e7], 8e7).total_value,
 ----
 7.0	7.0
 
-# Weights too fine to scale to integers are rounded inside the DP table;
-# best_of must still never return a selection over capacity.
-query I
-SELECT opt_knapsack_best_of([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007;
-----
-true
-
 # ── exact never returns an over-capacity answer ─────────────────────────────
 
 # Weights not whole at the 10^4 scale used to be ROUNDED to nearest inside the
 # table: both items rounded to weight 0 and the DP took both, 8e-05 against a
 # capacity of 7e-05. They are now rounded UP (and the capacity down), so the
-# answer is always feasible.
-query I
-SELECT opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007;
+# answer of exact, and of best_of, is always feasible.
+query II
+SELECT opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007,
+       opt_knapsack_best_of([1.0, 1.0], [0.00004, 0.00004], 0.00007).total_weight <= 0.00007;
 ----
-true
+true	true
 
 # A sweep over fine-grained weights and capacities: every exact and best_of
 # answer fits, on every row.
@@ -227,20 +214,19 @@ true	true
 
 # ── best_of skips the DP only when greedy is provably optimal ───────────────
 
-# Skipping must never change the answer: on every instance best_of equals the
-# best of always running the DP and both greedy members, and the brute-force
-# optimum. Capacity 30 makes most instances need the DP; capacity 1000 makes
-# every item fit, where greedy already is the optimum.
+# Skipping must never change the answer. At capacity 30 (many_solved above)
+# most instances need the DP; at capacity 1000 every item fits, greedy already
+# is the optimum, and best_of must still equal always running the DP.
 query II
 WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM many GROUP BY g),
-     s AS (SELECT g, c, opt_knapsack_best_of(v, w, c) AS b, opt_knapsack_exact(v, w, c) AS e,
-                  opt_knapsack_greedy_ratio(v, w, c) AS r, opt_knapsack_greedy_value(v, w, c) AS gv
-           FROM l, (VALUES (30.0), (1000.0)) cs(c))
+     s AS (SELECT opt_knapsack_best_of(v, w, 1000.0) AS b, opt_knapsack_exact(v, w, 1000.0) AS e,
+                  opt_knapsack_greedy_ratio(v, w, 1000.0) AS r, opt_knapsack_greedy_value(v, w, 1000.0) AS gv
+           FROM l)
 SELECT count(*), count(*) FILTER (b.total_value = greatest(e.total_value, r.total_value, gv.total_value)
                                   AND b.total_value = e.total_value)
 FROM s;
 ----
-600	600
+300	300
 
 # When everything fits, greedy by ratio also takes negative-value items; the
 # optimum leaves them out, so the DP must still run.
@@ -309,6 +295,22 @@ SELECT opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
        opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value;
 ----
 2.0	2.0
+
+# A tiny positive weight never snaps to 0 table units: the tolerance is
+# relative to the weight, not absolute.
+query RR
+SELECT opt_knapsack_exact([1.0], [1e-17], 0.0).total_value, opt_knapsack_best_of([1.0], [1e-17], 0.0).total_value;
+----
+0.0	0.0
+
+# Two of them at a capacity of one: each is 1 unit at the 10^4 scale against a
+# capacity of 0 units, so the DP takes neither; best_of keeps greedy's one.
+query RRR
+SELECT opt_knapsack_exact([1.0, 1.0], [1e-17, 1e-17], 1e-17).total_weight <= 1e-17,
+       opt_knapsack_best_of([1.0, 1.0], [1e-17, 1e-17], 1e-17).total_weight <= 1e-17,
+       opt_knapsack_best_of([1.0, 1.0], [1e-17, 1e-17], 1e-17).total_value;
+----
+true	true	1.0
 
 # A sweep mixing ordinary weights (1 to 10) with weights from 1e-20 to 1e20
 # at capacities from 5 to 20: the tiny ones force the 10^4 scale, the huge

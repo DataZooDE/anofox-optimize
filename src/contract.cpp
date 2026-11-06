@@ -36,6 +36,7 @@
 
 #include "duckdb/catalog/catalog.hpp"
 #include "duckdb/catalog/catalog_entry/schema_catalog_entry.hpp"
+#include "duckdb/common/string_util.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 #include "duckdb/transaction/meta_transaction.hpp"
 #include "duckdb_compat.hpp"
@@ -272,7 +273,7 @@ struct Family {
 	std::string call; // the solver call over _s / _m, with {a} for the algorithm
 	std::string long_tail;
 	std::string objectives_tail;
-	const char *output; // the long form's contract schema
+	std::string output; // the long form's contract schema; {schema} in a description names it
 	std::string long_description;
 	std::string objectives_description;
 	std::string long_example;
@@ -313,13 +314,13 @@ Family Assortment(const char *name, const char *model) {
 	        ") " + Objectives("'captured_margin', 'items_listed'",
 	                          "_r.captured_margin, len([x FOR x IN _r.listed IF x])::DOUBLE", "_sol"),
 	        "selection",
-	        "Table macro: the shelf as one row per product (the anofox integration contract's `selection` schema, "
-	        "for anofox_plot): the group column, model_id (the algorithm), item, margin, demand, listed. " +
+	        "Table macro: the shelf as one row per product{schema}: the group column, model_id (the algorithm), "
+	        "item, margin, demand, listed. " +
 	            std::string(model) +
 	            " substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of "
 	            "from_id's demand that moves to to_id." + GROUP_NOTE,
 	        "Table macro: the objectives of " + family +
-	            "_* per group and algorithm (the anofox integration contract's `summary` schema): the group column, "
+	            "_* per group and algorithm{schema}: the group column, "
 	            "model_id (the algorithm), metric (captured_margin, items_listed), value, conf_low, conf_high. Same "
 	            "arguments as " +
 	            family + "_by.",
@@ -345,12 +346,12 @@ vector<Family> Families() {
 	     "unnest(_sizes) AS size, {n:capacity} AS capacity FROM _sol) ORDER BY row_order",
 	     ") " + Objectives("'bins_used'", "_r.bins_used::DOUBLE", "_sol"),
 	     "assignment",
-	     "Table macro: bin packing as one row per item (the anofox integration contract's `assignment` schema, for "
-	     "anofox_plot): the group column, model_id (the algorithm), bin (1-based), item, size, capacity. Each group "
+	     "Table macro: bin packing as one row per item{schema}: the group column, model_id (the algorithm), bin "
+	     "(1-based), item, size, capacity. Each group "
 	     "of data is one instance, packed by every pack_* algorithm in algorithms (default ['best_of']). data is a "
 	     "table name or a '(SELECT ...)' string; the column arguments are column names.",
-	     "Table macro: the objective of bin packing per group and algorithm (the anofox integration contract's "
-	     "`summary` schema): the group column, model_id (the algorithm), metric (bins_used), value, conf_low, "
+	     "Table macro: the objective of bin packing per group and algorithm{schema}: the group column, model_id (the "
+	     "algorithm), metric (bins_used), value, conf_low, "
 	     "conf_high. Same arguments as pack_by.",
 	     "SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithms := ['first_fit_decreasing', "
 	     "'bin_completion']);",
@@ -369,13 +370,13 @@ vector<Family> Families() {
 	     ") " + Objectives("'avg_weighted_wave', 'waves_used'",
 	                       "_r.avg_weighted_wave, coalesce(list_max(_r.wave), 0)::DOUBLE", "_sol"),
 	     "assignment",
-	     "Table macro: pick-wave batching as one row per order (the anofox integration contract's `assignment` "
-	     "schema, for anofox_plot): the group column, model_id (the algorithm), wave (1-based), item, size, "
+	     "Table macro: pick-wave batching as one row per order{schema}: the group column, model_id (the algorithm), "
+	     "wave (1-based), item, size, "
 	     "capacity, priority. Each group of data is one instance, batched by every wave_* algorithm in algorithms "
 	     "(default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column "
 	     "names.",
-	     "Table macro: the objectives of pick-wave batching per group and algorithm (the anofox integration "
-	     "contract's `summary` schema): the group column, model_id (the algorithm), metric (avg_weighted_wave, "
+	     "Table macro: the objectives of pick-wave batching per group and algorithm{schema}: the group column, "
+	     "model_id (the algorithm), metric (avg_weighted_wave, "
 	     "waves_used), value, conf_low, conf_high. Same arguments as wave_by.",
 	     "SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'priority', 40.0);",
 	     "SELECT * FROM opt_wave_objectives_by('orders', 'order_id', 'lines', 'priority', 40.0, "
@@ -405,15 +406,15 @@ vector<Family> Families() {
 	                    "any_value(_r.makespan) AS _mk, any_value(_r.total_weighted_tardiness) AS _twt FROM _gantt "
 	                    "GROUP BY _g, model_id)"),
 	     "schedule",
-	     "Table macro: single-machine scheduling as one row per job, a Gantt chart (the anofox integration "
-	     "contract's `schedule` schema, for anofox_plot): the group column, model_id (the algorithm), resource (the "
+	     "Table macro: single-machine scheduling as one row per job, a Gantt chart{schema}: the group column, "
+	     "model_id (the algorithm), resource (the "
 	     "group, else 'machine'), task (the job), position, start, end, setup, processing, due, priority, tardiness, "
 	     "status ('on time' / 'late'). A job's setup runs before it, so the last end is the makespan. Each group of "
 	     "data is one machine, scheduled by every schedule_* algorithm in algorithms (default ['best_of']). "
 	     "setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value (from_id NULL: before the "
 	     "first job); a missing pair costs 0. Job ids must be unique per group.",
-	     "Table macro: the objectives of single-machine scheduling per group and algorithm (the anofox integration "
-	     "contract's `summary` schema): the group column, model_id (the algorithm), metric (late_jobs, makespan, "
+	     "Table macro: the objectives of single-machine scheduling per group and algorithm{schema}: the group "
+	     "column, model_id (the algorithm), metric (late_jobs, makespan, "
 	     "total_weighted_tardiness), value, conf_low, conf_high. Same arguments as schedule_by.",
 	     "SELECT * FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority', setup_data := 'changeovers', "
 	     "algorithms := ['edd', 'best_of']);",
@@ -433,11 +434,11 @@ vector<Family> Families() {
 	     ") " + Objectives("'items_selected', 'total_value', 'total_weight'",
 	                       "len([x FOR x IN _r.selected IF x])::DOUBLE, _r.total_value, _r.total_weight", "_sol"),
 	     "selection",
-	     "Table macro: the knapsack as one row per item (the anofox integration contract's `selection` schema, for "
-	     "anofox_plot): the group column, model_id (the algorithm), item, value, weight, selected, capacity." +
+	     "Table macro: the knapsack as one row per item{schema}: the group column, model_id (the algorithm), item, "
+	     "value, weight, selected, capacity." +
 	         std::string(GROUP_NOTE),
-	     "Table macro: the objectives of the knapsack per group and algorithm (the anofox integration contract's "
-	     "`summary` schema): the group column, model_id (the algorithm), metric (items_selected, total_value, "
+	     "Table macro: the objectives of the knapsack per group and algorithm{schema}: the group column, model_id "
+	     "(the algorithm), metric (items_selected, total_value, "
 	     "total_weight), value, conf_low, conf_high. Same arguments as knapsack_by.",
 	     "SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, algorithms := ['greedy_value', "
 	     "'exact']);",
@@ -457,13 +458,14 @@ vector<Family> Families() {
 	         "model_id, _pos) AS row_order FROM _o2 ORDER BY row_order",
 	     ") " + Objectives("'total_setup'", "_r.total_setup", "_sol"),
 	     "sequence",
-	     "Table macro: a sequence as one row per item in run order (the anofox integration contract's `sequence` "
-	     "schema, for anofox_plot): the group column, model_id (the algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or "
+	     "Table macro: a sequence as one row per item in run order{schema}: the group column, model_id (the "
+	     "algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is "
+	     "a table or "
 	     "'(SELECT ...)' with columns from_id, to_id, value: the cost of running to_id right after from_id; a "
 	     "missing pair costs 0." +
 	         std::string(GROUP_NOTE),
-	     "Table macro: the objective of sequencing per group and algorithm (the anofox integration contract's "
-	     "`summary` schema): the group column, model_id (the algorithm), metric (total_setup), value, conf_low, "
+	     "Table macro: the objective of sequencing per group and algorithm{schema}: the group column, model_id (the "
+	     "algorithm), metric (total_setup), value, conf_low, "
 	     "conf_high. Same arguments as sequence_by.",
 	     "SELECT * FROM opt_sequence_by('stops', 'stop', 'distances', algorithms := ['nearest_neighbour', "
 	     "'two_opt']);",
@@ -486,12 +488,12 @@ vector<Family> Families() {
 	                       "_r.volatility",
 	                       "_sol"),
 	     "weights",
-	     "Table macro: a portfolio as one row per asset (the anofox integration contract's `weights` schema, for "
-	     "anofox_plot): the group column, model_id (the algorithm), item, expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; "
+	     "Table macro: a portfolio as one row per asset{schema}: the group column, model_id (the algorithm), item, "
+	     "expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; "
 	     "a pair given once counts both ways." +
 	         std::string(GROUP_NOTE),
-	     "Table macro: the objectives of a portfolio per group and algorithm (the anofox integration contract's "
-	     "`summary` schema): the group column, model_id (the algorithm), metric (expected_return, holdings, sharpe, "
+	     "Table macro: the objectives of a portfolio per group and algorithm{schema}: the group column, model_id "
+	     "(the algorithm), metric (expected_return, holdings, sharpe, "
 	     "volatility), value, conf_low, conf_high. Same arguments as portfolio_by.",
 	     "SELECT * FROM opt_portfolio_by('assets', 'ticker', 'expected_return', 'covariance', 5, 0.3);",
 	     "SELECT * FROM opt_portfolio_objectives_by('assets', 'ticker', 'expected_return', 'covariance', 5, 0.3, "
@@ -583,7 +585,10 @@ void RegisterContractFunctions(ExtensionLoader &loader) {
 			const std::string suffix = std::string(f.name) + kind;
 			const std::string primary = "anofox_optimize_" + suffix;
 			const auto &tail = is_long ? f.long_tail : f.objectives_tail;
-			const auto &description = is_long ? f.long_description : f.objectives_description;
+			const std::string schema = " (the anofox integration contract's `" + (is_long ? f.output : "summary") +
+			                           "` schema" + (is_long ? ", for anofox_plot)" : ")");
+			const auto description =
+			    StringUtil::Replace(is_long ? f.long_description : f.objectives_description, "{schema}", schema);
 			const auto &example = is_long ? f.long_example : f.objectives_example;
 			loader.RegisterFunction(*TableMacro(primary, std::string(), f, tail, description, example));
 			loader.RegisterFunction(*TableMacro("opt_" + suffix, primary, f, tail, description, example));
@@ -595,9 +600,7 @@ void ApplyContractTags(ExtensionLoader &loader, const case_insensitive_set_t &pr
 	case_insensitive_map_t<std::string> outputs;
 	for (auto &f : Families()) {
 		for (auto &prefix : {"anofox_optimize_", "opt_"}) {
-			if (f.output) {
-				outputs[std::string(prefix) + f.name + "_by"] = f.output;
-			}
+			outputs[std::string(prefix) + f.name + "_by"] = f.output;
 			outputs[std::string(prefix) + f.name + "_objectives_by"] = "summary";
 		}
 	}

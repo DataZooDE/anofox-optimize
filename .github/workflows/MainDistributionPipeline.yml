@@ -105,6 +105,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: test/wasm/package-lock.json
 
       - name: Install harness dependencies
         run: npm --prefix test/wasm ci --ignore-scripts

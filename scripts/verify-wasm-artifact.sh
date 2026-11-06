@@ -11,9 +11,9 @@
 # records that only the section count was verified and exits 0; it never
 # silently skips a failure.
 #
-# wasm_mvp gets a real LOAD gate too (the harness boots the mvp bundle), as in
-# anofox-forecast: a regression there should fail the deploy, not ship.
-# wasm_threads has no Node bundle in @duckdb/duckdb-wasm, so section count only.
+# The harness bundle is the arch without its wasm_ prefix (wasm_eh -> eh,
+# wasm_mvp -> mvp); run.mjs rejects a bundle it does not know. wasm_threads
+# has no Node bundle in @duckdb/duckdb-wasm, so section count only.
 #
 # This script runs inside the deploy job, which holds AWS OIDC credentials --
 # never enable shell command-echo tracing here, and never print environment
@@ -37,8 +37,6 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # test/wasm/package.json -- must equal the engine bundled by that pin (see
 # test/wasm/README.md DEP-01: Version-verification procedure); bump together.
 WASM_HARNESS_ENGINE=v1.5.6
-# Archs the harness can actually LOAD against WASM_HARNESS_ENGINE.
-LOAD_ARCHS="wasm_eh wasm_mvp"
 
 if [ ! -f "$FILE" ]; then
   echo "error: file not found: $FILE" >&2
@@ -53,7 +51,7 @@ MODULE="$TMPDIR_LOCAL/module.wasm"
 
 # A raw WASM module starts with the 4-byte magic \0asm. A brotli-compressed
 # download (content-encoding: br) does not -- decompress it first.
-if python3 -c "import sys; sys.exit(0 if open(sys.argv[1], 'rb').read(4) == b'\x00asm' else 1)" "$FILE"; then
+if python3 "$REPO_ROOT/scripts/wasm_signature_sections.py" is-module "$FILE"; then
   cp "$FILE" "$MODULE"
 else
   if ! brotli -d -c "$FILE" > "$MODULE" 2>"$TMPDIR_LOCAL/brotli.err"; then
@@ -68,35 +66,18 @@ if ! python3 "$REPO_ROOT/scripts/wasm_signature_sections.py" check "$MODULE"; th
   exit 1
 fi
 
-arch_in_load_archs() {
-  local needle="$1"
-  for a in $LOAD_ARCHS; do
-    if [ "$a" = "$needle" ]; then
-      return 0
-    fi
-  done
-  return 1
-}
-
-if arch_in_load_archs "$ARCH" && [ "$DUCKDB_VERSION" = "$WASM_HARNESS_ENGINE" ]; then
+if [ "$ARCH" != wasm_threads ] && [ "$DUCKDB_VERSION" = "$WASM_HARNESS_ENGINE" ]; then
   if [ ! -d "$REPO_ROOT/test/wasm/node_modules" ]; then
     echo "error: $REPO_ROOT/test/wasm/node_modules is missing -- run: npm --prefix test/wasm ci --ignore-scripts" >&2
     exit 1
   fi
-  # wasm_mvp boots the mvp DuckDB-Wasm bundle; every other LOAD arch (today:
-  # wasm_eh) keeps the harness's default eh bundle.
-  if [ "$ARCH" = "wasm_mvp" ]; then
-    HARNESS_BUNDLE="mvp"
-  else
-    HARNESS_BUNDLE="eh"
-  fi
   if ! env -u AWS_ACCESS_KEY_ID -u AWS_SECRET_ACCESS_KEY -u AWS_SESSION_TOKEN \
-      node "$REPO_ROOT/test/wasm/run.mjs" --bundle "$HARNESS_BUNDLE" --ext "$MODULE" --file test/wasm/post_upload_smoke.test; then
+      node "$REPO_ROOT/test/wasm/run.mjs" --bundle "${ARCH#wasm_}" --ext "$MODULE" --file test/wasm/post_upload_smoke.test; then
     echo "error: $FILE failed to LOAD / pass test/wasm/post_upload_smoke.test in the DuckDB-Wasm Node harness" >&2
     exit 1
   fi
 else
-  MSG="LOAD check skipped for $ARCH $DUCKDB_VERSION: no @duckdb/duckdb-wasm build bundles this engine/arch (harness engine $WASM_HARNESS_ENGINE, LOAD archs $LOAD_ARCHS); duckdb_signature section count verified only"
+  MSG="LOAD check skipped for $ARCH $DUCKDB_VERSION: no @duckdb/duckdb-wasm build bundles this engine/arch (harness engine $WASM_HARNESS_ENGINE; wasm_threads has no Node bundle); duckdb_signature section count verified only"
   echo "$MSG"
   if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
     echo "::notice::$MSG"

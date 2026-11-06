@@ -49,20 +49,15 @@ node test/wasm/run.mjs --ext <wasm> --bundle mvp   # against a wasm_mvp build
 | `--file <f.test>` | one file, relative to the repo root (repeatable); a missing file fails |
 | `--ext <path>` | the artifact (also `ANOFOX_WASM_EXT`); otherwise searched under `build/` |
 | `--bundle eh\|mvp` | DuckDB-Wasm bundle to boot (also `ANOFOX_WASM_BUNDLE`), default `eh` |
-| `--all` | accepted for parity with the sibling harnesses; same as the default |
 
 Exit code 0 on success, 1 on any assertion failure or harness error. The
 DuckDB-Wasm worker prints a stack trace for every error it raises, including
 the ones a `statement error` record expects; those lines are noise, the
 per-file `✓`/`✗` lines and the totals are the result.
 
-`SKIP_FILES` in `run.mjs` is empty: every test is pure in-memory SQL with no
-second extension. Add a file there only if it is structurally infeasible in
-DuckDB-Wasm (filesystem, network, threads), never because it fails.
-
 `test/wasm/post_upload_smoke.test` is the small case the deploy job runs on
-the exact bytes it is about to upload, and again on what it uploaded
-(`scripts/verify-wasm-artifact.sh`): the
+the exact bytes it is about to upload (`scripts/verify-wasm-artifact.sh`); after
+the upload it only checks that what it published is byte-identical to them: the
 Falkenauer triplet instance with its known spread (first-fit-decreasing 12,
 bin completion 11, optimum 10), a feasibility check, and an `opt_pack_by` row
 count.
@@ -109,13 +104,14 @@ pass here means what a native pass means.
   string, and the row count must match. Expected rows are either one per line
   (tab-separated) or one value per line, as in DuckDB. `N values hashing to
   <md5>` is supported.
-- **Values:** DuckDB renders them (`COLUMNS(*)::VARCHAR`; `NULL`, `(empty)` for
-  the empty string), and `DESCRIBE` supplies each column's real type. Identical
+- **Values:** DuckDB renders them and reports each column's real type in the
+  same statement (`COLUMNS(*)::VARCHAR, typeof(COLUMNS(*))`; `NULL`, `(empty)`
+  for the empty string). Identical
   text is equal. Otherwise integers compare exactly as BigInt, BOOLEAN as
   true/false/1/0, DOUBLE/FLOAT/DECIMAL within 1e-9 relative (DuckDB itself
   allows 1%), and everything else, text included, only as identical text. The
-  run prints how many queries were compared without types (DESCRIBE failed) or
-  ran unwrapped; both are 0 for the current suite.
+  run prints how many queries ran unwrapped, and so without types; 0 for the
+  current suite.
 - **Raw retry:** a query is run without the `::VARCHAR` wrap only when the wrap
   raises a Binder or Parser error, so a runtime error is reported once and
   never hidden by a second run.

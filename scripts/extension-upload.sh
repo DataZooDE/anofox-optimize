@@ -40,13 +40,8 @@ script_dir="$(dirname "$(readlink -f "$0")")"
 # the file's last 256 bytes. For wasm it is the last 256 bytes of the trailing
 # `duckdb_signature` custom section, whose own LEB128 size already counts
 # them, so truncating and re-appending exactly 256 bytes keeps the module
-# well-formed.
-#
-# This script used to skip the truncate for wasm and append a second
-# `duckdb_signature` section by hand. Every published wasm artifact therefore
-# carried two, and DuckDB-Wasm refused it ("Unknown ABI type of value '208'").
-# A wasm artifact that does not already end with exactly one section now
-# aborts here rather than being patched into an unverified layout.
+# well-formed. A wasm artifact that does not already end with exactly one
+# section aborts here rather than being patched into an unverified layout.
 if [[ $4 == wasm* ]]; then
   python3 "$script_dir/wasm_signature_sections.py" check "$ext"
 fi
@@ -68,13 +63,6 @@ truncate -s 256 "$ext.sign"
 # append signature to extension binary
 cat "$ext.sign" >> "$ext.append"
 
-# Post-guard: the processed wasm artifact must still carry exactly one
-# duckdb_signature section, ending at EOF with the fresh signature bytes,
-# before it is ever compressed or uploaded.
-if [[ $4 == wasm* ]]; then
-  python3 "$script_dir/wasm_signature_sections.py" check "$ext.append"
-fi
-
 # compress extension binary
 if [[ $4 == wasm_* ]]; then
   brotli < "$ext.append" > "$ext.compressed"
@@ -86,7 +74,8 @@ fi
 # DuckDB-Wasm and pass test/wasm/post_upload_smoke.test (on the engine/arch
 # pairs the harness can boot; elsewhere the section count only). An artifact
 # that fails never reaches the versioned or the latest path, where the
-# post-upload check could only report it after the fact. Needs
+# post-upload check could only report it after the fact. It also re-checks
+# the duckdb_signature section of the processed bytes. Needs
 # test/wasm/node_modules (the deploy workflow installs it for wasm archs).
 if [[ $4 == wasm* ]]; then
   "$script_dir/verify-wasm-artifact.sh" "$ext.compressed" "$4" "$3"

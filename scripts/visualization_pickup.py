@@ -105,24 +105,9 @@ ASSORTMENT = ("'products', 'sku', 'margin', 'demand', '(SELECT from_id, to_id, f
               "WHERE from_id <> to_id)', 3, group_col := 'shop', algorithms := ['top_margin', 'local_search']")
 PORTFOLIO = ("'products', 'sku', 'ret', '(SELECT from_id, to_id, cov AS value FROM pairs)', 3, 0.5, "
              "group_col := 'shop', algorithms := ['top_return', 'greedy_sharpe']")
-CALLS = {
-    "opt_pack_by": f"opt_pack_by({PACK})",
-    "opt_pack_objectives_by": f"opt_pack_objectives_by({PACK})",
-    "opt_wave_by": f"opt_wave_by({WAVE})",
-    "opt_wave_objectives_by": f"opt_wave_objectives_by({WAVE})",
-    "opt_schedule_by": f"opt_schedule_by({SCHEDULE})",
-    "opt_schedule_objectives_by": f"opt_schedule_objectives_by({SCHEDULE})",
-    "opt_knapsack_by": f"opt_knapsack_by({KNAPSACK})",
-    "opt_knapsack_objectives_by": f"opt_knapsack_objectives_by({KNAPSACK})",
-    "opt_sequence_by": f"opt_sequence_by({SEQUENCE})",
-    "opt_sequence_objectives_by": f"opt_sequence_objectives_by({SEQUENCE})",
-    "opt_assortment_by": f"opt_assortment_by({ASSORTMENT})",
-    "opt_assortment_objectives_by": f"opt_assortment_objectives_by({ASSORTMENT})",
-    "opt_assortment_recapture_by": f"opt_assortment_recapture_by({ASSORTMENT})",
-    "opt_assortment_recapture_objectives_by": f"opt_assortment_recapture_objectives_by({ASSORTMENT})",
-    "opt_portfolio_by": f"opt_portfolio_by({PORTFOLIO})",
-    "opt_portfolio_objectives_by": f"opt_portfolio_objectives_by({PORTFOLIO})",
-}
+ARGS = {"pack": PACK, "wave": WAVE, "schedule": SCHEDULE, "knapsack": KNAPSACK, "sequence": SEQUENCE,
+        "assortment": ASSORTMENT, "assortment_recapture": ASSORTMENT, "portfolio": PORTFOLIO}
+CALLS = {f"opt_{f}{kind}": f"opt_{f}{kind}({args})" for f, args in ARGS.items() for kind in ("_by", "_objectives_by")}
 # The column a producer's plots are split by (one plot per value), or None for one plot.
 PLOT_PER = {"opt_pack_by": "site", "opt_wave_by": "site", "opt_pack_objectives_by": "site",
             "opt_wave_objectives_by": "site", "opt_schedule_objectives_by": "line",
@@ -136,6 +121,16 @@ SIZE = "width := 640, height := 400"
 
 def num(x: float) -> str:
     return f"{x:g}"
+
+
+def rects(svg: str, *attrs: str) -> list[tuple[str, ...]]:
+    """The `attrs` of every <rect> in `svg` that carries all of them."""
+    out = []
+    for tag in re.findall(r"<rect\b[^>]*>", svg):
+        found = dict(re.findall(r'([\w-]+)="([^"]*)"', tag))
+        if all(a in found for a in attrs):
+            out.append(tuple(found[a] for a in attrs))
+    return out
 
 
 class Pickup:
@@ -231,22 +226,14 @@ class Pickup:
                 self.check(f"{label}: every algorithm drawn ({', '.join(r['models'])})",
                            len(r["models"]) >= 2 and all(f">{m}<" in auto for m in r["models"]), str(r["models"]))
                 data = json.loads(r["rows"]) if isinstance(r["rows"], str) else r["rows"]
-                if schema == "assignment":
-                    self.assignment_values(label, auto, data)
-                elif schema == "schedule":
-                    self.schedule_values(label, auto, data)
-                elif schema == "selection":
-                    self.selection_values(label, auto, data)
-                elif schema == "sequence":
-                    self.sequence_values(label, auto, data)
-                elif schema == "weights":
-                    self.weights_values(label, auto, data)
+                values = getattr(self, f"{schema}_values", None)  # summary has no per-value check
+                if values:
+                    values(label, auto, data)
             if per:
                 self.check(f"{producer}: one plot per {per}", len(rows) >= 2, str([r["part"] for r in rows]))
 
     def assignment_values(self, label: str, svg: str, data: list[dict]) -> None:
-        blocks = Counter((m.group(1), float(m.group(2))) for m in
-                         re.finditer(r'<rect[^>]*data-series="([^"]*)"[^>]*data-value="([^"]*)"', svg))
+        blocks = Counter((series, float(value)) for series, value in rects(svg, "data-series", "data-value"))
         want = Counter((str(d["item"]), float(d["size"])) for d in data)
         self.check(f"{label}: every item a block of its size ({sum(want.values())})", blocks == want,
                    f"svg {sorted(blocks.items())[:6]}…, table {sorted(want.items())[:6]}…")
@@ -269,14 +256,12 @@ class Pickup:
         flag = "selected" if "selected" in data[0] else "listed"
         # the bar's measure: value, else margin x demand (an assortment's expected margin)
         measure = (lambda d: d["value"]) if "value" in data[0] else (lambda d: d["margin"] * d["demand"])
-        bars = [(m.group(2), m.group(3), m.group(1), round(float(m.group(4)), 9)) for m in
-                re.finditer(r'<rect[^>]*fill="([^"]*)"[^>]*data-x="([^"]*)" data-series="([^"]*)" '
-                            r'data-value="([^"]*)"', svg)]
+        bars = [(x, s, fill, round(float(v), 9)) for fill, x, s, v in
+                rects(svg, "fill", "data-x", "data-series", "data-value")]
+        got = Counter((x, s, v) for x, s, _, v in bars)
         want = Counter((str(d["item"]), flag if d[flag] else f"not {flag}", round(measure(d), 9)) for d in data)
-        self.check(f"{label}: every item a bar of its measure, {flag} or not ({sum(want.values())})",
-                   Counter((x, s, v) for x, s, _, v in bars) == want,
-                   f"svg {sorted(Counter((x, s, v) for x, s, _, v in bars).items())[:4]}…, "
-                   f"table {sorted(want.items())[:4]}…")
+        self.check(f"{label}: every item a bar of its measure, {flag} or not ({sum(want.values())})", got == want,
+                   f"svg {sorted(got.items())[:4]}…, table {sorted(want.items())[:4]}…")
         fills = {s: {f for _, s2, f, _ in bars if s2 == s} for s in (flag, f"not {flag}")}
         self.check(f"{label}: {flag} and not {flag} each have their own colour ({fills})",
                    all(len(f) == 1 for f in fills.values()) and fills[flag] != fills[f"not {flag}"])
@@ -293,8 +278,7 @@ class Pickup:
 
     def weights_values(self, label: str, svg: str, data: list[dict]) -> None:
         # several algorithms: one 100 % bar per algorithm (x), a segment per item (series) of its weight
-        segments = Counter((m.group(1), m.group(2), round(float(m.group(3)), 9)) for m in
-                           re.finditer(r'<rect[^>]*data-x="([^"]*)" data-series="([^"]*)" data-value="([^"]*)"', svg))
+        segments = Counter((x, s, round(float(v), 9)) for x, s, v in rects(svg, "data-x", "data-series", "data-value"))
         want = Counter((d["model_id"], str(d["item"]), round(d["weight"], 9)) for d in data)
         self.check(f"{label}: every item a segment of its weight in its algorithm's bar ({sum(want.values())})",
                    segments == want, f"svg {sorted(segments.items())[:4]}…, table {sorted(want.items())[:4]}…")

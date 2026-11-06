@@ -22,7 +22,7 @@
 //   - the column count must equal the length of the type string, and the
 //     number of rows must match, before any value is compared;
 //   - identical text is equal; otherwise the expected value is interpreted in
-//     the column's actual SQL type (from DESCRIBE): integers exactly (BigInt, so
+//     the column's actual SQL type (typeof, in the same statement): integers exactly (BigInt, so
 //     BIGINT keeps its precision), BOOLEAN as true/false/1/0, DOUBLE/FLOAT/
 //     DECIMAL within FLOAT_REL_TOL relative, everything else (VARCHAR, LIST,
 //     STRUCT, ...) as exact text. DuckDB allows 1% on doubles; this harness
@@ -80,11 +80,10 @@ export function parseTest(text) {
     }
 
     if (kw === 'statement') {
-      if (tokens[1] !== 'ok' && tokens[1] !== 'error') {
-        records.push({ type: 'unknown', kw: line.trim(), line: lineNo, skip: false });
-      }
-      const expectOk = tokens[1] === 'ok';
-      let errorSubstr = tokens[1] === 'error' ? tokens.slice(2).join(' ').trim() || null : null;
+      const kind = tokens[1];
+      const known = kind === 'ok' || kind === 'error';
+      if (!known) records.push({ type: 'unknown', kw: line.trim(), line: lineNo, skip: false });
+      let errorSubstr = kind === 'error' ? tokens.slice(2).join(' ').trim() || null : null;
       i++;
       const sql = [];
       while (i < lines.length && !isBlank(lines[i]) && lines[i].trim() !== '----') { sql.push(lines[i]); i++; }
@@ -97,8 +96,8 @@ export function parseTest(text) {
         while (i < lines.length && !isBlank(lines[i])) { msg.push(lines[i]); i++; }
         if (msg.length) errorSubstr = msg.join('\n').trim();
       }
-      if (tokens[1] === 'ok' || tokens[1] === 'error') {
-        records.push({ type: 'statement', expectOk, errorSubstr, sql: sql.join('\n'), line: lineNo, skip: skipMode });
+      if (known) {
+        records.push({ type: 'statement', expectOk: kind === 'ok', errorSubstr, sql: sql.join('\n'), line: lineNo, skip: skipMode });
       }
       continue;
     }
@@ -167,7 +166,7 @@ function floatsEqual(a, b) {
   return diff <= FLOAT_ABS_TOL || diff <= FLOAT_REL_TOL * Math.max(Math.abs(x), Math.abs(y));
 }
 
-// `sqlType` is the column's DuckDB type from DESCRIBE, or null when unknown
+// `sqlType` is the column's DuckDB type from typeof(), or null when unknown
 // (then the sqllogictest type letter decides: I integer, R float, T text).
 export function valuesEqual(sqlType, letter, expected, actual) {
   if (expected === actual) return true;
@@ -212,8 +211,9 @@ function expectedRows(lines, nCols, nActualRows) {
 
 const HASH_RE = /^(\d+) values hashing to ([0-9a-f]{32})$/;
 
-// Row ordering in DuckDB's runner: rowsort sorts whole rows by their cells in
-// column order (string comparison), valuesort sorts every value; both sides.
+// Row ordering in DuckDB's runner, applied to both sides: rowsort sorts whole
+// rows by their cells in column order (string comparison), valuesort sorts
+// every value and refills rows of nCols.
 function cmpRows(a, b) {
   for (let k = 0; k < Math.min(a.length, b.length); k++) {
     if (a[k] < b[k]) return -1;
@@ -222,24 +222,27 @@ function cmpRows(a, b) {
   return a.length - b.length;
 }
 
+function sortRows(rows, sortMode, nCols) {
+  if (sortMode === 'rowsort') return [...rows].sort(cmpRows);
+  if (sortMode !== 'valuesort') return rows;
+  const vals = rows.flat().sort();
+  const out = [];
+  for (let k = 0; k < vals.length; k += nCols) out.push(vals.slice(k, k + nCols));
+  return out;
+}
+
 // record: { types, sortMode, expected }. rows: array of arrays of cells.
 // sqlTypes: array of column type names, or null.
 export function compareQuery(record, rows, sqlTypes = null) {
   if (record.expected === null) return { ok: true }; // no expected block: must just run
 
   const nCols = record.types.length;
-  let actual = rows.map((r) => r.map(renderCell));
-  const wrongWidth = actual.findIndex((r) => r.length !== nCols);
+  const rendered = rows.map((r) => r.map(renderCell));
+  const wrongWidth = rendered.findIndex((r) => r.length !== nCols);
   if (wrongWidth >= 0) {
-    return { ok: false, reason: `result has ${actual[wrongWidth].length} column(s), the query declares ${nCols} (${record.types})` };
+    return { ok: false, reason: `result has ${rendered[wrongWidth].length} column(s), the query declares ${nCols} (${record.types})` };
   }
-
-  if (record.sortMode === 'rowsort') actual.sort(cmpRows);
-  else if (record.sortMode === 'valuesort') {
-    const vals = actual.flat().sort();
-    actual = [];
-    for (let k = 0; k < vals.length; k += nCols) actual.push(vals.slice(k, k + nCols));
-  }
+  const actual = sortRows(rendered, record.sortMode, nCols);
 
   const hash = record.expected.length === 1 && HASH_RE.exec(record.expected[0]);
   if (hash) {
@@ -251,16 +254,10 @@ export function compareQuery(record, rows, sqlTypes = null) {
 
   const exp = expectedRows(record.expected, nCols, actual.length);
   if (exp.error) return { ok: false, reason: exp.error };
-  let expected = exp.rows;
-  if (expected.length !== actual.length) {
-    return { ok: false, reason: `row count mismatch: expected ${expected.length}, got ${actual.length}` };
+  if (exp.rows.length !== actual.length) {
+    return { ok: false, reason: `row count mismatch: expected ${exp.rows.length}, got ${actual.length}` };
   }
-  if (record.sortMode === 'rowsort') expected = [...expected].sort(cmpRows);
-  else if (record.sortMode === 'valuesort') {
-    const vals = expected.flat().sort();
-    expected = [];
-    for (let k = 0; k < vals.length; k += nCols) expected.push(vals.slice(k, k + nCols));
-  }
+  const expected = sortRows(exp.rows, record.sortMode, nCols);
 
   for (let r = 0; r < expected.length; r++) {
     for (let c = 0; c < nCols; c++) {
@@ -306,7 +303,7 @@ const RETRY_RAW = /Binder Error|Parser Error/;
 // `runQuery(sql)` must return an array of rows, each an array of cells in
 // column order (not keyed by name: duplicate column names must survive).
 export async function runRecords(records, runQuery, { file, log, timeoutMs = RECORD_TIMEOUT_MS }) {
-  const result = { file, passed: 0, failed: 0, skipped: 0, untyped: 0, raw: 0, failures: [] };
+  const result = { file, passed: 0, failed: 0, skipped: 0, raw: 0, failures: [] };
   const fail = (rec, reason) => {
     result.failed++;
     result.failures.push({ where: `${file}:${rec.line}`, sql: rec.sql || rec.kw || '', reason });
@@ -338,27 +335,25 @@ export async function runRecords(records, runQuery, { file, log, timeoutMs = REC
     if (rec.type === 'query') {
       try {
         // Render through DuckDB's own ::VARCHAR, as native sqllogictest does,
-        // rather than through Arrow-JS (which mis-renders DECIMAL). The column
-        // types come from DESCRIBE, which only binds. Only a query the wrap
-        // cannot bind or parse (PRAGMA, SHOW, ...) is retried raw; a runtime
-        // error is the query's own and is reported, not run a second time.
+        // rather than through Arrow-JS (which mis-renders DECIMAL), with each
+        // column's type from typeof() in the same statement: the first half of
+        // every row is the values, the second half their types. Only a query
+        // the wrap cannot bind or parse (PRAGMA, SHOW, ...) is retried raw and
+        // compared by type letter; a runtime error is the query's own and is
+        // reported, not run a second time.
         const inner = rec.sql.trim().replace(/;\s*$/, '');
         let rows;
         let sqlTypes = null;
         try {
-          rows = await run(`SELECT COLUMNS(*)::VARCHAR FROM (\n${inner}\n) AS _wrap`);
-          try {
-            const d = await run(`DESCRIBE SELECT * FROM (\n${inner}\n) AS _wrap`);
-            sqlTypes = d.map((r) => String(r[1]));
-          } catch (err) {
-            if (err instanceof RecordTimeout) throw err;
-          }
+          const wide = await run(`SELECT COLUMNS(*)::VARCHAR, typeof(COLUMNS(*)) FROM (\n${inner}\n) AS _wrap`);
+          const width = wide.length ? wide[0].length / 2 : 0;
+          rows = wide.map((r) => r.slice(0, width));
+          if (wide.length) sqlTypes = wide[0].slice(width).map(String);
         } catch (err) {
           if (err instanceof RecordTimeout || !RETRY_RAW.test(String(err.message || err))) throw err;
           result.raw++;
           rows = await run(rec.sql);
         }
-        if (!sqlTypes) result.untyped++;
         const cmp = compareQuery(rec, rows, sqlTypes);
         if (cmp.ok) result.passed++;
         else fail(rec, cmp.reason);

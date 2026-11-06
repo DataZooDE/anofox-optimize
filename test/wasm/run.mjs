@@ -19,7 +19,6 @@
 //
 // With no --file, every test/sql/**/*.test runs. The list is derived from the
 // directory, so a new test file is covered without editing this harness.
-// `--all` is still accepted (as in the sibling harnesses) and means the same.
 //
 // --bundle / ANOFOX_WASM_BUNDLE selects which @duckdb/duckdb-wasm bundle boots
 // the engine (eh: exception-handling, the default; mvp: minimal viable
@@ -41,13 +40,6 @@ const require = createRequire(path.join(HERE, 'package.json'));
 const EXT_NAME = 'anofox_optimize';
 const EXT_FILE = `${EXT_NAME}.duckdb_extension.wasm`;
 
-// Files skipped (logged, never silent). A file belongs here ONLY when it is
-// structurally infeasible on DuckDB-Wasm -- filesystem/network/thread-dependent
-// semantics, or a hard WASM runtime limitation that no harness fix resolves --
-// never merely because it fails. Empty: every anofox_optimize test is pure
-// in-memory SQL with no second extension.
-const SKIP_FILES = new Map([]);
-
 // Per-record timeout. A record that hangs fails the run naming its file and
 // line instead of running into the CI job's timeout. The hung query keeps the
 // worker busy, so a timeout aborts the run. ANOFOX_WASM_RECORD_TIMEOUT_MS
@@ -58,54 +50,41 @@ function parseArgs(argv) {
   const args = {
     ext: process.env.ANOFOX_WASM_EXT || null,
     bundle: process.env.ANOFOX_WASM_BUNDLE || 'eh',
-    all: false,
     files: [],
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === '--ext') args.ext = argv[++i];
     else if (a === '--bundle') args.bundle = argv[++i];
-    else if (a === '--all') args.all = true;
     else if (a === '--file') args.files.push(argv[++i]);
     else if (a.endsWith('.test')) args.files.push(a);
   }
   return args;
 }
 
-// Locate the built extension .wasm if not given explicitly.
+// Every file under `dir` (recursively) whose name satisfies `keep`, sorted.
+function filesUnder(dir, keep) {
+  return fs.readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((e) => e.isFile() && keep(e.name))
+    .map((e) => path.join(e.parentPath ?? e.path, e.name))
+    .sort();
+}
+
+// Locate the built extension .wasm under build/ if not given explicitly.
 function findExtension(explicit) {
   if (explicit) {
     if (!fs.existsSync(explicit)) throw new Error(`--ext path does not exist: ${explicit}`);
     return path.resolve(explicit);
   }
-  const roots = [
-    path.join(REPO_ROOT, 'build'),
-    REPO_ROOT,
-  ];
-  const found = [];
-  const walk = (dir, depth) => {
-    if (depth > 8) return;
-    let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    for (const e of entries) {
-      const p = path.join(dir, e.name);
-      if (e.isDirectory()) {
-        if (e.name === 'node_modules' || e.name === '.git') continue;
-        walk(p, depth + 1);
-      } else if (e.name === EXT_FILE) {
-        found.push(p);
-      }
-    }
-  };
-  for (const r of roots) walk(r, 0);
+  const buildDir = path.join(REPO_ROOT, 'build');
+  const found = fs.existsSync(buildDir) ? filesUnder(buildDir, (name) => name === EXT_FILE) : [];
   if (found.length === 0) {
     throw new Error(
-      `Could not find ${EXT_FILE}. Build the WASM extension first, or pass --ext <path> / set ANOFOX_WASM_EXT.`,
+      `Could not find ${EXT_FILE} under build/. Build the WASM extension first, or pass --ext <path> / set ANOFOX_WASM_EXT.`,
     );
   }
   // Prefer an eh build if multiple are present.
-  found.sort((a, b) => (b.includes('wasm_eh') ? 1 : 0) - (a.includes('wasm_eh') ? 1 : 0));
-  return found[0];
+  return found.find((p) => p.includes('wasm_eh')) ?? found[0];
 }
 
 // A version-agnostic static server: any request whose path ends in the extension
@@ -117,7 +96,7 @@ function startServer(extPath) {
   const wasm = fs.readFileSync(extPath);
   const server = http.createServer((req, res) => {
     const url = decodeURIComponent((req.url || '').split('?')[0]);
-    if (url.endsWith(`/${EXT_FILE}`) || url.endsWith(EXT_FILE)) {
+    if (url.endsWith(`/${EXT_FILE}`)) {
       res.setHeader('Content-Type', 'application/wasm');
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.end(wasm);
@@ -137,9 +116,6 @@ function startServer(extPath) {
 const VALID_BUNDLES = new Set(['eh', 'mvp']);
 
 async function bootEngine(bundle) {
-  if (!VALID_BUNDLES.has(bundle)) {
-    throw new Error(`unknown --bundle/ANOFOX_WASM_BUNDLE value: ${bundle} (expected eh or mvp)`);
-  }
   const duckdb = require('@duckdb/duckdb-wasm/dist/duckdb-node.cjs');
   const Worker = require('web-worker');
   const DIST = path.dirname(require.resolve('@duckdb/duckdb-wasm/dist/duckdb-node.cjs'));
@@ -210,28 +186,17 @@ async function main() {
     await conn.close(); // per-file isolation below re-opens the catalog
 
     // Choose test files.
-    let files;
-    if (args.files.length) files = args.files;
-    else {
-      files = [];
+    let files = args.files;
+    if (files.length === 0) {
       const sqlDir = path.join(REPO_ROOT, 'test', 'sql');
-      const walk = (d) => {
-        for (const e of fs.readdirSync(d, { withFileTypes: true })) {
-          const p = path.join(d, e.name);
-          if (e.isDirectory()) walk(p);
-          else if (e.name.endsWith('.test')) files.push(path.relative(REPO_ROOT, p));
-        }
-      };
-      walk(sqlDir);
-      files.sort();
+      files = filesUnder(sqlDir, (name) => name.endsWith('.test')).map((p) => path.relative(REPO_ROOT, p));
       if (files.length === 0) throw new Error(`no .test files found under ${sqlDir}`);
       log(`Running all ${files.length} test/sql .test files.`);
     }
 
-    let totalPass = 0, totalFail = 0, totalSkip = 0, totalUntyped = 0, totalRaw = 0;
+    let totalPass = 0, totalFail = 0, totalSkip = 0, totalRaw = 0;
     const failedFiles = [];
     for (const rel of files) {
-      if (SKIP_FILES.has(rel)) { log(`  ⊘ ${rel} — skipped (${SKIP_FILES.get(rel)})`); continue; }
       const abs = path.join(REPO_ROOT, rel);
       // A named file that does not exist is a failure, not a skip: a typo in
       // --file (or in the post-upload check) must not turn the gate green.
@@ -249,7 +214,7 @@ async function main() {
       await c.close();
 
       totalPass += r.passed; totalFail += r.failed; totalSkip += r.skipped;
-      totalUntyped += r.untyped; totalRaw += r.raw;
+      totalRaw += r.raw;
       const mark = r.failed === 0 ? '✓' : '✗';
       log(`  ${mark} ${rel} — ${r.passed} passed, ${r.failed} failed, ${r.skipped} skipped`);
       if (r.failed > 0) failedFiles.push(rel);
@@ -257,9 +222,9 @@ async function main() {
 
     log('──────────────────────────────────────────────');
     log(`Totals: ${totalPass} passed, ${totalFail} failed, ${totalSkip} skipped across ${files.length} files`);
-    // Queries compared by type letter only (DESCRIBE could not bind them), and
-    // queries run unwrapped (the ::VARCHAR wrap did not parse or bind).
-    log(`Comparison: ${totalUntyped} queries without column types, ${totalRaw} run unwrapped`);
+    // Queries the ::VARCHAR / typeof wrap could not parse or bind: run as written
+    // and compared by type letter only.
+    log(`Comparison: ${totalRaw} queries run unwrapped, without column types`);
     if (totalFail > 0) {
       log(`✗ Failing files: ${failedFiles.join(', ')}`);
       failedHard = true;

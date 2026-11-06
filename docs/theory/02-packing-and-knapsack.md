@@ -99,9 +99,10 @@ The error names whichever limit was hit.
 
 **`best_of`** — runs both greedy members and, when `exact` would accept the
 instance (the same two limits: 50 million cells and the memory budget),
-`exact` too, and keeps the most valuable answer. Inside the limit it is the proven optimum when every weight
-and the capacity are whole multiples of 0.0001, and otherwise as good as the
-better of `exact` on rounded-up weights and the greedy members. Over either
+`exact` too, and keeps the most valuable answer. Inside the limits it is the
+proven optimum when every weight and the capacity are whole multiples of
+0.0001, and otherwise as good as the better of `exact` on rounded-up weights
+and the greedy members. Over either
 limit it does not raise like `exact` does: it returns the best greedy answer,
 which is **not** exact. A caller who needs a guarantee must still ask for
 `exact`, which raises instead of degrading.
