@@ -73,10 +73,10 @@ for it by name and accept the size limit that comes with it.
 
 The one exception is knapsack. `knapsack_exact`'s cost is bounded by its
 table size, not exponential, so `knapsack_best_of` also runs it whenever the
-table fits (items × (capacity + 1) ≤ 50 million in whole units) and is then
+table fits (at most 50 million cells and within `anofox_optimize_knapsack_max_memory` (default `'512MB'`)) and is then
 the proven optimum, provided every weight and the capacity are whole multiples
 of 0.0001 (finer weights are rounded up: always feasible, optimal only for
-the rounded weights). Above that limit it quietly returns the best greedy
+the rounded weights). Over either limit it quietly returns the best greedy
 answer instead of raising, and that answer is **not** exact — call
 `knapsack_exact` when you need to know which case you are in.
 

@@ -9,7 +9,7 @@ Only two functions return a proven optimum, and both say so in their names.
 
 | Function | Guarantee | Cost | Limit |
 |---|---|---|---|
-| `knapsack_exact` | proven optimum for weights in multiples of 0.0001; finer weights are rounded up (always feasible, optimal for the rounded weights) | O(n · capacity) | scales with **numeric capacity** |
+| `knapsack_exact` | proven optimum for weights in multiples of 0.0001; finer weights are rounded up (always feasible, optimal for the rounded weights) | O(n · capacity) | raises over **50 million cells** or over `anofox_optimize_knapsack_max_memory` (default `'512MB'`) |
 | `schedule_exact` | proven optimum | exponential | refuses above **14 jobs** |
 
 `knapsack_best_of` runs `knapsack_exact` too whenever the table fits within
@@ -32,7 +32,9 @@ bound you can compute yourself. See
 1,000,000,000 is not, because the DP table is indexed by capacity. If your
 capacity is a large continuous quantity, scale your units down — capacity in
 pallets rather than grams — or use `knapsack_best_of`, which stays exact while
-items × (capacity + 1) ≤ 50 million and returns its best greedy answer above that.
+its table is at most 50 million cells and within `anofox_optimize_knapsack_max_memory` (default `'512MB'`), and returns its best greedy answer beyond that. The
+table needs 8 bytes per capacity unit plus one bit per cell, and
+`knapsack_by`'s default (`best_of`) pays its cost once per group.
 
 **Scheduling's cost scales with job count.** `schedule_exact` explores states
 over subsets of jobs, so cost roughly doubles per additional job regardless of
