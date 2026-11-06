@@ -1,0 +1,33 @@
+# name: test/sql/telemetry_options.test
+# description: the telemetry options exist in every build, so the documented opt-out works everywhere
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# The README and the community docs tell users to run this. Builds without telemetry (wasm, MinGW) must accept
+# it too; there it changes nothing, because nothing is sent.
+statement ok
+SET anofox_telemetry_enabled = false;
+
+query T
+SELECT current_setting('anofox_telemetry_enabled');
+----
+false
+
+statement ok
+SET anofox_telemetry_key = 'phc_test';
+
+statement error
+SET anofox_telemetry_enabled = NULL;
+----
+<REGEX>:.*anofox_telemetry_enabled cannot be NULL.*
+
+# The default says whether this build sends anything: true natively, false in wasm, where telemetry
+# is compiled out. (MinGW is compiled out too, but this suite does not run there.)
+statement ok
+RESET anofox_telemetry_enabled;
+
+query T
+SELECT current_setting('anofox_telemetry_enabled') = NOT (SELECT starts_with(platform, 'wasm') FROM pragma_platform());
+----
+true

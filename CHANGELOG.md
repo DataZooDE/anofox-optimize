@@ -14,6 +14,10 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
     already ended with one (`Unknown ABI type of value '208'`). It now replaces the 256-byte placeholder
     in place, as for native binaries, and `scripts/wasm_signature_sections.py check` requires exactly one
     section before and after signing. Ported from anofox-forecast#272.
+- **`SET anofox_telemetry_enabled = false` works in every build.** The wasm and MinGW builds, which have no
+  telemetry, did not register the `anofox_telemetry_*` options, so the documented opt-out failed with
+  "unrecognized configuration parameter". The options now exist everywhere; there they change nothing, and
+  `anofox_telemetry_enabled` defaults to `false`.
 
 ### Added
 
@@ -22,6 +26,9 @@ The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had fail
   After each wasm upload the deploy job downloads what it published, checks the section count and runs
   `test/wasm/post_upload_smoke.test` on it (`scripts/extension-verify-upload.sh`). `make audit` runs
   the section walker's self-test, and `make test_wasm` runs the suite against `build/wasm_eh`.
+- **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
+  because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
+  message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).
 
 ## v2026.10.26
 

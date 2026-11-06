@@ -26,10 +26,13 @@ extension:
   maintainers:
     - jrosskopf
   # windows_amd64_rtools: R packaging only.
-  # windows_amd64_mingw / wasm_*: the extension links OpenSSL (pulled in for
-  # anonymous usage telemetry, which is off with a single SET) and that is not
-  # reliably available on those toolchains.
-  excluded_platforms: "windows_amd64_rtools;windows_amd64_mingw;wasm_mvp;wasm_eh;wasm_threads"
+  # windows_amd64_mingw: vcpkg cannot build OpenSSL there.
+  # wasm_mvp: loads, but an extension error reaches the caller as
+  # `_setThrew is not defined` instead of its message (duckdb-wasm's mvp glue).
+  # wasm_threads: untested; duckdb-wasm has no Node bundle to run it in.
+  # wasm_eh builds without telemetry and passes the whole test/sql suite in
+  # DuckDB-Wasm (test/wasm).
+  excluded_platforms: "windows_amd64_rtools;windows_amd64_mingw;wasm_mvp;wasm_threads"
 
 repo:
   github: DataZooDE/anofox-optimize
