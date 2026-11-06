@@ -109,8 +109,10 @@ jobs:
       - name: Install harness dependencies
         run: npm --prefix test/wasm ci --ignore-scripts
 
-      - name: Section walker self-test
-        run: python3 scripts/wasm_signature_sections.py --self-test
+      - name: Section walker and comparator self-tests
+        run: |
+          python3 scripts/wasm_signature_sections.py --self-test
+          node test/wasm/sqllogic.mjs --self-test
 
       - name: Run DuckDB-Wasm load + runtime harness
         run: |
@@ -127,7 +129,9 @@ jobs:
     # The deploy job itself fans out per arch and only pushes the artifacts
     # that actually exist. The wasm runtime test is the exception: a wasm
     # artifact that does not LOAD must not ship (#9), so its failure blocks
-    # the deploy.
+    # the deploy -- of every arch, native included. That is deliberate (the
+    # maintainer's call on #9), not an oversight next to the non-gating smoke
+    # and pickup jobs.
     if: ${{ !cancelled() && needs.duckdb-latest-wasm-runtime-test.result == 'success' }}
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit

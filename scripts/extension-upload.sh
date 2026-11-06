@@ -82,6 +82,16 @@ else
   gzip < "$ext.append" > "$ext.compressed"
 fi
 
+# Pre-upload gate: the exact bytes about to be published must LOAD in
+# DuckDB-Wasm and pass test/wasm/post_upload_smoke.test (on the engine/arch
+# pairs the harness can boot; elsewhere the section count only). An artifact
+# that fails never reaches the versioned or the latest path, where the
+# post-upload check could only report it after the fact. Needs
+# test/wasm/node_modules (the deploy workflow installs it for wasm archs).
+if [[ $4 == wasm* ]]; then
+  "$script_dir/verify-wasm-artifact.sh" "$ext.compressed" "$4" "$3"
+fi
+
 # Upload manifest: truncated fresh for this invocation, then one s3:// URI per
 # successful upload below. scripts/extension-verify-upload.sh reads it to know
 # exactly which objects this run published.
