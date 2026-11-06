@@ -1,5 +1,66 @@
 # Changelog
 
+## Unreleased
+
+### Breaking
+
+- **`knapsack_exact` is now an alias of `knapsack_best_of`** (`anofox_optimize_knapsack_exact` and
+  `opt_knapsack_exact` set `alias_of` to `anofox_optimize_knapsack_best_of` and carry its description), and it
+  **no longer raises past the limits**: over 50 million table cells or over
+  `anofox_optimize_knapsack_max_memory` it returns `best_of`'s best greedy answer, silently, and the "exact
+  knapsack needs …" errors are gone. Why: inside the limits the two always returned the same value (on a
+  1,000-instance sweep they differed only in which of two equally valuable selections a tie kept, on 45 rows),
+  and a member that matches another on every instance gives a search nothing to choose between (AGENTS.md,
+  "a family needs spread"). The proven optimum now holds only where the DP ran, and nothing in the result says
+  whether it did: keep the instance within the limits, or raise the budget, to rely on it. `knapsack_by` still
+  accepts `'exact'`, which returns what `'best_of'` does, so saved algorithm lists keep working.
+
+### Changed
+
+- **"Fits" in `knapsack_*` is strict in doubles**: the selected weights, summed in item
+  order in doubles, are at most the capacity, with no tolerance, and `total_weight` is exactly that sum
+  (what a SQL `list_sum` over the selected weights in item order returns). So
+  `opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3)` now takes one item, value 1, not both: 0.1 + 0.2 is
+  0.30000000000000004 in doubles. When the DP's answer fills the capacity in 0.0001 units but sums over it
+  in doubles, `knapsack_exact` and `knapsack_best_of` drop the item whose removal costs least, or take the
+  best selection one unit lighter, which the table already holds, if that is worth more. `knapsack_exact`
+  also runs both greedy members and never returns less than they do. Its proven optimum now needs weights
+  and capacity in multiples of 0.0001 whose sums are exact in doubles (integers, halves, quarters); on
+  1,000 instances with weights in steps of 0.1 it fell short of the strict optimum on 10. Integer-weight
+  results are unchanged. For weights finer than 0.0001, which the DP rounds up, the descriptions no longer
+  claim optimality, for the rounded weights or otherwise: with values [10, 6, 6], weights
+  [0.00008, 0.00006, 0.00006] and capacity 0.00012, `knapsack_exact` and `knapsack_best_of` return 10 while
+  {6, 6} fits and is worth 12.
+- **`wave_*` may ship an order sooner**: the item-order repair can move an order into an earlier wave than
+  its algorithm placed it; the descriptions say so, and `avg_weighted_wave` is computed from the waves returned.
+- **`anofox_optimize_knapsack_max_memory` defaults to `'64MB'` in DuckDB-Wasm** (still `'512MB'` natively).
+  The DP table is a plain allocation outside DuckDB's buffer manager, and in DuckDB-Wasm every thread
+  allocates from one shared 32-bit heap of 2–4 GB, so a few threads' 512MB tables could crash the page.
+
+### Fixed
+
+- **No knapsack member returns `total_weight > capacity` in doubles any more.** `knapsack_exact` and
+  `knapsack_best_of` took `[0.1, 0.2]` at capacity 0.3 and reported a `total_weight` of
+  0.30000000000000004, which a strict checker calls infeasible; on a 1,000-instance sweep of weights in
+  steps of 0.1 that happened on about one row in ten. `knapsack_greedy_ratio` and `knapsack_greedy_value`
+  were over on about one in 25 there too: they checked a running load summed in their own order, while
+  `total_weight` sums in item order, and the two can differ in the last bit.
+- **No `pack_*` bin and no `wave_*` wave is over capacity in item order any more.** The rule is now one for
+  every family, stated in AGENTS.md: a bin, wave or knapsack selection fits when its sizes, summed in item
+  order with `list_sum` in doubles, are within capacity, and a checker must use that ordered sum, since an
+  unordered `sum()` has no defined order. The members tracked a running load in placement order, so
+  `opt_pack_first_fit_decreasing([0.1, 0.2, 0.3], 0.6)` put all three in one bin (0.3 + 0.2 + 0.1 is 0.6,
+  but 0.1 + 0.2 + 0.3 is 0.6000000000000001) and `opt_wave_priority_first` likewise. Every member now ends
+  in one shared repair (`src/include/item_order_fit.hpp`): while a bin or wave is over, its smallest item
+  (for waves, its lowest-priority order) moves to the first other one it fits, else to a new one. Ids stay
+  1-based and contiguous, and `avg_weighted_wave` is computed from the final waves. On 2000 sets of twelve
+  sizes in steps of 0.1 at capacity 1.0, the repair added one bin on 2 sets for first-fit-, best-fit-decreasing
+  and bin completion and none for `pack_best_of`, and one wave on 2 sets for `wave_fewest_waves`; on integer
+  sizes no result changed. The repair may move an item into an earlier bin or wave; `pack_next_fit` and
+  `wave_as_given` place in item order and never need it. `pack_local_search` accepts a move only when the
+  receiving bin fits in item order, so the repair never reopens a bin it emptied (it beats
+  first-fit-decreasing on 10 of those sets, not 8).
+
 ## v2026.11.6
 
 The wasm build loads in DuckDB-Wasm (#9), and the community registry builds `wasm_eh` and, again, DuckDB

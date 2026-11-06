@@ -8,6 +8,20 @@
 **Problem.** Given item sizes and a bin capacity, assign every item to a bin
 so that no bin exceeds capacity, using as few bins as possible.
 
+**What "fits" means.** A bin fits when its sizes, summed in item order (the
+order of the input list) in doubles, are at most the capacity, with no
+tolerance: `list_sum(list(size ORDER BY item))`, never an unordered `sum()`.
+The same rule holds for `wave_*` and `knapsack_*`. The members place items
+by a running load summed in their own order, which can differ in the last
+bit (largest first, 0.3 + 0.2 + 0.1 is 0.6; in item order 0.1 + 0.2 + 0.3 is
+0.6000000000000001), so every member ends by moving an item out of any bin
+or wave that is over, into the first other one it fits, else a new one: the
+smallest item for `pack_*`, the lowest-priority order for `wave_*`. The
+repair may move an item into an EARLIER bin or wave. On integer sizes it
+never changes anything, and `next_fit` and `wave_as_given`, which place
+items in item order, never need it. In `pack_by` and `wave_by`, item order
+is the order of `item_col`.
+
 **Hardness.** NP-hard. Deciding whether a set fits in two bins is already
 equivalent to partition.
 
@@ -77,42 +91,67 @@ heuristic and usually good. Its worst case is well known: with capacity 10
 and items (value 10, weight 10) and (value 6, weight 6), ratio ties them and
 may take the 6.
 
-**`exact`** — dynamic programming over capacity. Returns the proven optimum
-when every weight and the capacity are whole multiples of 0.0001. Finer
-weights are rounded **up** to the next 0.0001 and the capacity down, so the
-answer always fits but is optimal only for the rounded-up weights; a greedy
-member working on the true weights can then beat it. Items heavier than the
-capacity are never taken and play no part in the scaling.
+"Fits" is the rule of `pack_*` above: the selected weights, summed in item
+order in doubles, are at most the capacity, with no tolerance. Every member
+returns such an answer, and its `total_weight` is that sum, the same number
+a SQL `coalesce(list_sum(...), 0)` over the selected weights in item order
+returns (`list_sum` of an empty list is NULL; in
+`knapsack_by`, item order is the order of `item_col`). So 0.1 and 0.2 do not
+both fit a capacity of 0.3: in doubles they sum to 0.30000000000000004.
+
+**`best_of`** — runs both greedy members and, within the limits below, a
+dynamic program over capacity, and keeps the most valuable answer, so it
+never loses to a greedy member. `exact` is an **alias** of `best_of`, not a
+separate member: it once raised past the limits, but inside them it always
+returned `best_of`'s value, and a member that matches another on every
+instance gives a search nothing to choose between.
+
+Where the DP runs, the result is the proven optimum when every weight and
+the capacity are whole multiples of 0.0001 and their sums are exact in
+doubles (integers, halves, quarters). Weights finer than 0.0001 are rounded
+**up** to the next 0.0001 and the capacity down for the DP, which optimizes
+those rounded weights; the answer, the better of that and the greedy
+members, then carries **no** optimality guarantee. With values [10, 6, 6],
+weights [0.00008, 0.00006, 0.00006] and capacity 0.00012, every weight is 1
+unit against a capacity of 1 unit, so `best_of` returns 10 while {6, 6} fits
+and is worth 12. Decimal weights such as 0.1 can fill the capacity exactly in
+0.0001 units yet sum over it in doubles; the DP's answer then drops the item
+whose removal costs least, or takes the best selection one unit lighter,
+which the table already holds, if that is worth more. That can miss a
+selection that fills the capacity and does fit: on a sweep of 1,000
+instances with weights in steps of 0.1 it fell short of the strict optimum
+on 10. Items heavier than the capacity are never taken and play no part in
+the scaling.
+
 Cost is O(n · capacity) time and memory, so it scales with the *numeric*
 capacity, not just the item count. A capacity of 1,000 with 60 items is
 trivial; a capacity of 10^9 is not. The table has items × (capacity + 1)
 cells, counting weights in the smallest unit (1, 0.1, … 0.0001) that makes
 every item that can fit, and the capacity, whole. It needs 8 bytes per
-capacity unit plus one bit per cell. `exact` **raises** when the table is
-over 50 million cells, or over the memory budget set with
+capacity unit plus one bit per cell. The DP runs only when the table is at
+most 50 million cells and within the memory budget set with
 
 ```sql
-SET anofox_optimize_knapsack_max_memory = '2GB';   -- default '512MB'
+SET anofox_optimize_knapsack_max_memory = '2GB';   -- default '512MB', '64MB' in DuckDB-Wasm
 ```
 
-The error names whichever limit was hit.
-
-**`best_of`** — runs both greedy members and, when `exact` would accept the
-instance (the same two limits: 50 million cells and the memory budget),
-`exact` too, and keeps the most valuable answer. Inside the limits it is the
-proven optimum when every weight and the capacity are whole multiples of
-0.0001, and otherwise as good as the better of `exact` on rounded-up weights
-and the greedy members. Over either
-limit it does not raise like `exact` does: it returns the best greedy answer,
-which is **not** exact. A caller who needs a guarantee must still ask for
-`exact`, which raises instead of degrading.
+Past either limit `best_of` does **not** raise: it returns the best greedy
+answer, which is not exact, and nothing in the result says which case
+occurred. A caller who needs the guarantee must keep the instance within the
+limits, by raising the budget or rounding weights to coarser units. The
+table lives outside DuckDB's buffer manager, so in DuckDB-Wasm, where every
+thread allocates from one shared 32-bit heap, the default is 64MB rather
+than 512MB. The budget bounds each call's table, not the process: several
+threads can each hold one.
 
 The DP's time and memory grow with items × capacity, so near the limits
 `best_of` is far slower than the greedy members. `knapsack_by` runs
 `best_of` by default and pays that cost once per group. It skips the DP only
-when greedy is provably optimal: every positive-value item fits, nothing
-fits, or the best-ratio prefix fills the capacity exactly (the fractional
-relaxation then has no fractional item). That makes "everything
+when greedy is provably optimal for the DP's rounded instance: every
+positive-value item fits, nothing fits, or the best-ratio prefix fills the
+capacity exactly (the fractional relaxation then has no fractional item).
+For weights in multiples of 0.0001 that is the optimum; for finer weights it
+is not (the example above returns 10 from `best_of` too). That makes "everything
 fits" instances as cheap as greedy, but on a typical instance, where some
 item has to be left out, it saves nothing.
 
@@ -125,7 +164,7 @@ as fully as possible.
 
 This is worth recognising because it is where exact solving pays. On the
 60-shipment instance in the test suite, a perfect 1000-unit fill exists,
-greedy rules top out at 968, and `knapsack_exact` finds the perfect fill.
+greedy rules top out at 968, and `knapsack_best_of`'s DP finds the perfect fill.
 Two rounding-level percent of total cost — but it is free, and provably the
 best available.
 
@@ -135,6 +174,6 @@ best available.
 |---|---|
 | Everything must be placed somewhere | `pack_*` |
 | Items may be left out | `knapsack_*` |
-| Capacity is a modest integer, you want a guarantee | `knapsack_exact` |
+| Capacity is a modest integer, you want a guarantee | `knapsack_best_of`, within its DP limits |
 | Very large input, good enough is fine | `knapsack_greedy_ratio` |
 | Items combine into exact fills | `pack_bin_completion` |

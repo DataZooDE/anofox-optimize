@@ -2,3 +2,4 @@ build/
 .cache/
 duckdb_unittest_tempdir/
 test/wasm/node_modules/
+.crew/

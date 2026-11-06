@@ -37,7 +37,7 @@ Reach for a specific member when you need something `best_of` cannot express:
 
 | You need | Use |
 |---|---|
-| The proven optimum, small instance | `knapsack_exact`, `schedule_exact` |
+| The proven optimum, small instance | `knapsack_best_of` (within its DP limits), `schedule_exact` |
 | A deliberately weak baseline to beat | `pack_next_fit`, `portfolio_top_return`, `assortment_top_margin` |
 | Speed on very large inputs | the greedy members (`*_greedy_*`, `*_first_fit_*`) |
 | To reproduce an incumbent policy | `sequence_as_given`, `wave_as_given` |
@@ -102,7 +102,7 @@ keeping the last one. See [Working With Your Tables](03-working-with-your-tables
 | Family | Practical size | Notes |
 |---|---|---|
 | `pack_*`, `wave_*`, `knapsack_greedy_*` | large | linear or n log n |
-| `knapsack_exact` | moderate | pseudo-polynomial in capacity |
+| `knapsack_best_of` (alias `knapsack_exact`) | moderate | pseudo-polynomial in capacity; past its limits, greedy |
 | `sequence_*`, `assortment_*`, `portfolio_*` | moderate | quadratic per improving pass |
 | `schedule_exact` | **≤ 14 jobs** | exponential; refuses beyond, naming the fallback |
 

@@ -17,9 +17,10 @@ objective or add your own constraints. Each family solves one fixed problem
 shape. If your problem is not one of those shapes, this library cannot bend
 to fit it, and you want a MIP solver.
 
-**Not always optimal.** Most families are heuristic. Two functions are exact
-and say so in their names (`knapsack_exact`, `schedule_exact`); everything
-else returns a good answer with no guarantee attached. The
+**Not always optimal.** Most families are heuristic. `schedule_exact` is exact
+and says so in its name; `knapsack_best_of` (alias `knapsack_exact`) is exact
+only when its dynamic program runs; everything else returns a good answer with
+no guarantee attached. The
 [validation guide](../guides/04-validating-results.md) covers how to find out
 how good.
 
@@ -71,11 +72,13 @@ Silently going exponential past some hidden size threshold is exactly the
 surprise a library should not spring on you; if you want the optimum, you ask
 for it by name and accept the size limit that comes with it.
 
-The one exception is knapsack. `knapsack_exact`'s cost is bounded by its
-table size, not exponential, so `knapsack_best_of` also runs it whenever the
-table is within its limits. Over them it quietly returns the best greedy
-answer, which is **not** exact — call `knapsack_exact` when you need to know
-which case you are in. Limits and rounding:
+The one exception is knapsack. Its dynamic program's cost is bounded by its
+table size, not exponential, so `knapsack_best_of` runs it whenever the table
+is within its limits. Over them it quietly returns the best greedy answer,
+which is **not** exact, and nothing in the result says so: keep the instance
+inside the limits, or raise `anofox_optimize_knapsack_max_memory`, if you need
+the guarantee. `knapsack_exact` is an alias of `knapsack_best_of` and behaves
+the same. Limits and rounding:
 [Packing and Knapsack](02-packing-and-knapsack.md#knapsack-knapsack_).
 
 ## Feasibility is not optional

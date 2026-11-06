@@ -5,16 +5,20 @@
 
 ## Exact vs heuristic
 
-Only two functions return a proven optimum, and both say so in their names.
+Two functions can return a proven optimum: `schedule_exact`, which refuses
+what it cannot solve, and `knapsack_best_of` (alias `knapsack_exact`), only
+when its dynamic program ran.
 
 | Function | Guarantee | Cost | Limit |
 |---|---|---|---|
-| `knapsack_exact` | proven optimum for weights in multiples of 0.0001; finer weights are rounded up (always feasible, optimal for the rounded weights) | O(n · capacity) | raises over **50 million cells** or over `anofox_optimize_knapsack_max_memory` (default `'512MB'`) |
+| `knapsack_best_of` (alias `knapsack_exact`) | where the DP runs: proven optimum for weights in multiples of 0.0001 whose sums are exact in doubles; finer weights are rounded up for the DP and then carry no optimality guarantee, and decimal ones such as 0.1 can fall short (fits means summed in doubles, so 0.1 + 0.2 > 0.3) | O(n · capacity) | the DP runs up to **50 million cells** and within `anofox_optimize_knapsack_max_memory` (default `'512MB'`, `'64MB'` in DuckDB-Wasm); past them, the best greedy answer, silently |
 | `schedule_exact` | proven optimum | exponential | refuses above **14 jobs** |
 
-`knapsack_best_of` runs `knapsack_exact` too whenever the table is within its
-limits, and then carries the same guarantee. Over them it returns its best
-greedy answer without raising, and that answer is not exact.
+Past the limits `knapsack_best_of` returns its best greedy answer without
+raising, that answer is not exact, and nothing in the result says which case
+occurred. `knapsack_exact` used to raise there instead; it is now an alias of
+`knapsack_best_of`, because inside the limits the two always returned the same
+value.
 
 Everything else is heuristic and carries no guarantee. Some have known
 worst-case bounds — `first_fit_decreasing` never exceeds `11/9 · OPT + 6/9`
@@ -27,12 +31,12 @@ bound you can compute yourself. See
 
 ## Two different meanings of "too big"
 
-**Knapsack's cost scales with capacity, not item count.** `knapsack_exact` on
+**Knapsack's cost scales with capacity, not item count.** `knapsack_best_of` on
 60 items with capacity 1,000 is instant. The same 60 items with capacity
 1,000,000,000 is not, because the DP table is indexed by capacity. If your
 capacity is a large continuous quantity, scale your units down — capacity in
-pallets rather than grams — or use `knapsack_best_of`, which stays exact within
-`knapsack_exact`'s limits and returns its best greedy answer beyond them.
+pallets rather than grams. Past the limits `knapsack_best_of` returns its best
+greedy answer, which is not exact.
 `knapsack_by`'s default (`best_of`) pays the DP's cost once per group.
 
 **Scheduling's cost scales with job count.** `schedule_exact` explores states
@@ -107,7 +111,7 @@ question than the one you asked.
 | Interactive, large input | the single greedy member |
 | Interactive, moderate input | `best_of` |
 | Batch, moderate input | `best_of`, then `*_exact` on a scaled-down instance to measure the gap |
-| You need a guarantee | `knapsack_exact` or `schedule_exact`, within their limits |
+| You need a guarantee | `schedule_exact`, or `knapsack_best_of` within its DP limits |
 
 If you need a guarantee outside those limits, this library cannot give it to
 you, and the honest answer is a dedicated MIP solver.

@@ -108,7 +108,7 @@ Example: `anofox_optimize_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,
 
 `anofox_optimize_knapsack_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-Runs both greedy knapsack members and, when knapsack_exact would accept the instance (the same limits: at most 50 million table cells, within anofox_optimize_knapsack_max_memory), knapsack_exact's dynamic program too, and returns whichever captured the most value. Where the DP runs, the result is the proven optimum when every weight and the capacity are whole multiples of 0.0001; finer weights are rounded up, and the result is then always within capacity but optimal only for the rounded-up weights. Where knapsack_exact would refuse, best_of does NOT raise but silently returns the best greedy answer, which is NOT exact and carries no guarantee — call knapsack_exact if you need to know which case you are in. The DP's time and memory grow with items * capacity, so near the limits it is far slower than the greedy members, and knapsack_by, whose default algorithm is best_of, pays that per group. The DP is skipped when greedy provably is the optimum: every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity exactly. Never loses to any single member. Same signature as the other knapsack functions.
+0/1 knapsack: runs both greedy knapsack members and, within the limits below, a dynamic program over integer-scaled weights, and returns whichever captured the most value; never loses to a greedy member. knapsack_exact is an alias of this function. A selection fits when its weights, summed in item order in doubles, are at most the capacity, with no tolerance; total_weight is that sum (0 for an empty selection). Where the DP runs, the result is the proven optimum when every weight and the capacity are whole multiples of 0.0001 and their sums are exact in doubles (integers, halves, quarters). Decimal weights such as 0.1 can fill the capacity in 0.0001 units yet sum over it in doubles (0.1 + 0.2 > 0.3); such a DP answer is repaired, by dropping the item that costs least or by the best selection one unit lighter, and may then fall short of the optimum. Weights finer than 0.0001 are rounded UP to the next 0.0001 (and the capacity down) for the DP, which optimizes those rounded weights; there the result carries NO optimality guarantee and can miss a better selection that fits. The DP is skipped when greedy is provably optimal for the DP's rounded instance (every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity exactly). LIMITS: the DP runs only when its table, items * (capacity + 1) cells counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes every item that can fit and the capacity whole, is at most 50 million cells and its memory, 8 bytes per capacity unit plus one bit per cell, is within anofox_optimize_knapsack_max_memory (default '512MB', '64MB' in DuckDB-Wasm). Past either limit it does NOT raise but silently returns the best greedy answer, which carries no guarantee, and nothing in the result says which case occurred: to rely on the guarantee, keep the instance within those limits (raise the setting or round weights to coarser units). Items heavier than the capacity are never taken and do not affect the scaling. Time and memory grow with items * capacity, so near the limits it is far slower than the greedy members, and knapsack_by, whose default algorithm is best_of, pays that per group. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 
@@ -124,7 +124,7 @@ Example: `SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, 
 
 `anofox_optimize_knapsack_exact(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-0/1 knapsack solved by dynamic programming over integer-scaled weights. Returns the proven optimum when every weight and the capacity are whole multiples of 0.0001, unlike the greedy members. Finer weights are rounded UP to the next 0.0001 (and the capacity down), so the answer is always within capacity but optimal only for the rounded-up weights. Items heavier than the capacity are never taken and do not affect the scaling. The table has items * (capacity + 1) cells, counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes every item that can fit, and the capacity, whole. It needs 8 bytes per capacity unit plus one bit per cell. RAISES rather than degrading when the table is over 50 million cells or over the memory budget set by anofox_optimize_knapsack_max_memory (default '512MB'), since a caller who asked for the exact answer and silently received a heuristic one could not tell its result is no longer a bound. Time and memory grow with items * capacity, so near those limits it is far slower than the greedy members. Same signature as the other knapsack functions.
+0/1 knapsack: runs both greedy knapsack members and, within the limits below, a dynamic program over integer-scaled weights, and returns whichever captured the most value; never loses to a greedy member. knapsack_exact is an alias of this function. A selection fits when its weights, summed in item order in doubles, are at most the capacity, with no tolerance; total_weight is that sum (0 for an empty selection). Where the DP runs, the result is the proven optimum when every weight and the capacity are whole multiples of 0.0001 and their sums are exact in doubles (integers, halves, quarters). Decimal weights such as 0.1 can fill the capacity in 0.0001 units yet sum over it in doubles (0.1 + 0.2 > 0.3); such a DP answer is repaired, by dropping the item that costs least or by the best selection one unit lighter, and may then fall short of the optimum. Weights finer than 0.0001 are rounded UP to the next 0.0001 (and the capacity down) for the DP, which optimizes those rounded weights; there the result carries NO optimality guarantee and can miss a better selection that fits. The DP is skipped when greedy is provably optimal for the DP's rounded instance (every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity exactly). LIMITS: the DP runs only when its table, items * (capacity + 1) cells counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes every item that can fit and the capacity whole, is at most 50 million cells and its memory, 8 bytes per capacity unit plus one bit per cell, is within anofox_optimize_knapsack_max_memory (default '512MB', '64MB' in DuckDB-Wasm). Past either limit it does NOT raise but silently returns the best greedy answer, which carries no guarantee, and nothing in the result says which case occurred: to rely on the guarantee, keep the instance within those limits (raise the setting or round weights to coarser units). Items heavier than the capacity are never taken and do not affect the scaling. Time and memory grow with items * capacity, so near the limits it is far slower than the greedy members, and knapsack_by, whose default algorithm is best_of, pays that per group. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)`
 
@@ -164,7 +164,7 @@ Example: `anofox_optimize_matrix_from_triples([1,2], [2,1], [0.5, 0.5], 2, 1)`
 
 `anofox_optimize_pack_best_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items into bins by best-fit-decreasing: sorts items largest first and puts each into the FULLEST bin it still fits, leaving emptier bins for larger items later. Same signature as the other packing functions.
+Packs items into bins by best-fit-decreasing: sorts items largest first and puts each into the FULLEST bin it still fits, leaving emptier bins for larger items later. Same signature as the other packing functions. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
@@ -172,7 +172,7 @@ Example: `anofox_optimize_pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
 `anofox_optimize_pack_best_of(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Runs every packing algorithm in this family and returns whichever used the fewest bins. Costs the sum of the parts and never loses to any single member; use it when you do not want to choose. Same signature as the other packing functions.
+Runs every packing algorithm in this family and returns whichever used the fewest bins. Costs the sum of the parts and never loses to any single member; use it when you do not want to choose. Same signature as the other packing functions. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_best_of([4.0, 8.0, 1.0], 10.0)`
 
@@ -180,7 +180,7 @@ Example: `anofox_optimize_pack_best_of([4.0, 8.0, 1.0], 10.0)`
 
 `anofox_optimize_pack_bin_completion(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items by BOUNDED BIN COMPLETION: seeds each bin with the largest unplaced item, searches all PAIRS of companions exhaustively for the combination that fills the bin fullest, then tops up greedily with anything that still fits. Not exhaustive over arbitrary subsets and not optimal, but it recovers the exact three-per-bin fills that make every greedy member stall together on triplet-style instances. Costs O(n^2) per bin. Same signature as the other packing functions.
+Packs items by BOUNDED BIN COMPLETION: seeds each bin with the largest unplaced item, searches all PAIRS of companions exhaustively for the combination that fills the bin fullest, then tops up greedily with anything that still fits. Not exhaustive over arbitrary subsets and not optimal, but it recovers the exact three-per-bin fills that make every greedy member stall together on triplet-style instances. Costs O(n^2) per bin. Same signature as the other packing functions. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_bin_completion([4.0, 8.0, 1.0], 10.0)`
 
@@ -188,7 +188,7 @@ Example: `anofox_optimize_pack_bin_completion([4.0, 8.0, 1.0], 10.0)`
 
 `anofox_optimize_pack_by(data, item_col, size_col, capacity, group_col, algorithms)` -> table
 
-Table macro: bin packing as one row per item (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), bin (1-based), item, size, capacity. Each group of data is one instance, packed by every pack_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names.
+Table macro: bin packing as one row per item (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), bin (1-based), item, size, capacity. Each group of data is one instance, packed by every pack_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names. A bin fits when its sizes, summed in item_col order in doubles, are at most the capacity.
 
 Example: `SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithms := ['first_fit_decreasing', 'bin_completion']);`
 
@@ -196,7 +196,7 @@ Example: `SELECT * FROM opt_pack_by('cartons', 'carton', 'size', 10.0, algorithm
 
 `anofox_optimize_pack_first_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items into bins by first-fit-decreasing: sorts items largest first and puts each into the first bin it fits. Fast and near-optimal on typical instances, but provably up to 11/9 of optimal and weak on triplet-style instances. Returns bins_used and a 1-based bin number per input item. An empty item list uses 0 bins; a non-empty list of zero-size items uses 1.
+Packs items into bins by first-fit-decreasing: sorts items largest first and puts each into the first bin it fits. Fast and near-optimal on typical instances, but provably up to 11/9 of optimal and weak on triplet-style instances. Returns bins_used and a 1-based bin number per input item. An empty item list uses 0 bins; a non-empty list of zero-size items uses 1. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
@@ -204,7 +204,7 @@ Example: `anofox_optimize_pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
 `anofox_optimize_pack_local_search(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items by first-fit-decreasing and then IMPROVES the result: tries to dissolve bins one at a time, from least-loaded upward, by relocating their items into other bins — including a swap that displaces a smaller item to a third bin to make room. Repeats until no bin can be emptied. Slower than the greedy members; on triplet-style instances it does not beat them (use bin_completion there). Same signature as the other packing functions.
+Packs items by first-fit-decreasing and then IMPROVES the result: tries to dissolve bins one at a time, from least-loaded upward, by relocating their items into other bins — including a swap that displaces a smaller item to a third bin to make room. Repeats until no bin can be emptied. Slower than the greedy members; on triplet-style instances it does not beat them (use bin_completion there). Same signature as the other packing functions. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_local_search([4.0, 8.0, 1.0], 10.0)`
 
@@ -212,7 +212,7 @@ Example: `anofox_optimize_pack_local_search([4.0, 8.0, 1.0], 10.0)`
 
 `anofox_optimize_pack_next_fit(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items into bins by next-fit, in the given order, only ever using the most recently opened bin. The weakest member of the family and the cheapest; included so a search has a poor-but-valid baseline to move away from.
+Packs items into bins by next-fit, in the given order, only ever using the most recently opened bin. The weakest member of the family and the cheapest; included so a search has a poor-but-valid baseline to move away from. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_next_fit([4.0, 8.0, 1.0], 10.0)`
 
@@ -228,7 +228,7 @@ Example: `SELECT * FROM opt_pack_objectives_by('cartons', 'carton', 'size', 10.0
 
 `anofox_optimize_pack_worst_fit_decreasing(['DOUBLE[]', DOUBLE])` -> `STRUCT(bins_used BIGINT, "assignment" BIGINT[])`
 
-Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than best-fit but produces balanced loads. Same signature as the other packing functions.
+Packs items into bins by worst-fit-decreasing: puts each item into the EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than best-fit but produces balanced loads. Same signature as the other packing functions. A bin fits when its sizes, summed in input order in doubles, are at most the capacity.
 
 Example: `anofox_optimize_pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)`
 
@@ -404,7 +404,7 @@ Example: `anofox_optimize_version()`
 
 `anofox_optimize_wave_as_given(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
-Batches orders into capacity-bounded waves in the order given. The do-nothing baseline and usually poor; included so a search has a valid option to move away from. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
+Batches orders into capacity-bounded waves in the order given. The do-nothing baseline and usually poor; included so a search has a valid option to move away from. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better. A wave fits when its items, summed in input order in doubles, are at most the capacity; the repair that enforces this may move an order into an EARLIER wave than the algorithm placed it, so it can ship sooner, and avg_weighted_wave is computed from the waves returned.
 
 Example: `anofox_optimize_wave_as_given([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
@@ -412,7 +412,7 @@ Example: `anofox_optimize_wave_as_given([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
 `anofox_optimize_wave_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
-Runs every batching algorithm in this family and returns whichever had the lowest priority-weighted mean wave. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
+Runs every batching algorithm in this family and returns whichever had the lowest priority-weighted mean wave. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better. A wave fits when its items, summed in input order in doubles, are at most the capacity; the repair that enforces this may move an order into an EARLIER wave than the algorithm placed it, so it can ship sooner, and avg_weighted_wave is computed from the waves returned.
 
 Example: `anofox_optimize_wave_best_of([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
@@ -420,7 +420,7 @@ Example: `anofox_optimize_wave_best_of([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
 `anofox_optimize_wave_by(data, item_col, size_col, priority_col, capacity, group_col, algorithms)` -> table
 
-Table macro: pick-wave batching as one row per order (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), wave (1-based), item, size, capacity, priority. Each group of data is one instance, batched by every wave_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names.
+Table macro: pick-wave batching as one row per order (the anofox integration contract's `assignment` schema, for anofox_plot): the group column, model_id (the algorithm), wave (1-based), item, size, capacity, priority. Each group of data is one instance, batched by every wave_* algorithm in algorithms (default ['best_of']). data is a table name or a '(SELECT ...)' string; the column arguments are column names. A wave fits when its sizes, summed in item_col order in doubles, are at most the capacity.
 
 Example: `SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'priority', 40.0);`
 
@@ -428,7 +428,7 @@ Example: `SELECT * FROM opt_wave_by('orders', 'order_id', 'lines', 'priority', 4
 
 `anofox_optimize_wave_fewest_waves(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
-Batches largest orders first, minimising the NUMBER of waves rather than the weighted mean wave. Kept deliberately: it optimizes the wrong quantity for this objective, and shows what that costs. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
+Batches largest orders first, minimising the NUMBER of waves rather than the weighted mean wave. Kept deliberately: it optimizes the wrong quantity for this objective, and shows what that costs. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better. A wave fits when its items, summed in input order in doubles, are at most the capacity; the repair that enforces this may move an order into an EARLIER wave than the algorithm placed it, so it can ship sooner, and avg_weighted_wave is computed from the waves returned.
 
 Example: `anofox_optimize_wave_fewest_waves([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
@@ -444,7 +444,7 @@ Example: `SELECT * FROM opt_wave_objectives_by('orders', 'order_id', 'lines', 'p
 
 `anofox_optimize_wave_priority_density(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
-Batches by highest priority PER UNIT OF WORK, since an urgent order that fills a whole wave delays everything behind it. Usually beats plain priority-first when order sizes vary widely. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
+Batches by highest priority PER UNIT OF WORK, since an urgent order that fills a whole wave delays everything behind it. Usually beats plain priority-first when order sizes vary widely. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better. A wave fits when its items, summed in input order in doubles, are at most the capacity; the repair that enforces this may move an order into an EARLIER wave than the algorithm placed it, so it can ship sooner, and avg_weighted_wave is computed from the waves returned.
 
 Example: `anofox_optimize_wave_priority_density([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 
@@ -452,7 +452,7 @@ Example: `anofox_optimize_wave_priority_density([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0
 
 `anofox_optimize_wave_priority_first(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(wave BIGINT[], avg_weighted_wave DOUBLE)`
 
-Batches HIGHEST PRIORITY FIRST, so urgent orders land in early waves. Directly targets the weighted-wave objective; can waste capacity when an urgent order is also large. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better.
+Batches HIGHEST PRIORITY FIRST, so urgent orders land in early waves. Directly targets the weighted-wave objective; can waste capacity when an urgent order is also large. Takes items and priorities (one per order) and a per-wave capacity. Returns a 1-based wave number per order and the priority-weighted mean wave, sum(wave*priority)/sum(priority) — lower is better. A wave fits when its items, summed in input order in doubles, are at most the capacity; the repair that enforces this may move an order into an EARLIER wave than the algorithm placed it, so it can ship sooner, and avg_weighted_wave is computed from the waves returned.
 
 Example: `anofox_optimize_wave_priority_first([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)`
 

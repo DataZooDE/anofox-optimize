@@ -5,6 +5,7 @@
 #include "duckdb/main/extension/extension_loader.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "item_order_fit.hpp"
 #include "register_alias.hpp"
 #include "duckdb_compat/list_vector.hpp"
 #include "duckdb_compat/struct_vector.hpp"
@@ -23,15 +24,17 @@ namespace duckdb {
 namespace {
 
 struct Waves {
-	vector<idx_t> wave; // 1-based wave number per order
+	vector<idx_t> wave; // wave number per order: 0-based inside PackInOrder, 1-based once returned
 	double avg_weighted_wave = 0;
 };
 
-//! Pack orders into capacity-bounded waves in the given index order.
+//! Pack orders into capacity-bounded waves in the given index order. In the
+//! identity order (as_given) each running load already is the item-order
+//! sum, so the repair below never moves an order there.
 Waves PackInOrder(const vector<double> &items, const vector<double> &priority, double capacity,
                   const vector<idx_t> &order) {
 	Waves w;
-	w.wave.assign(items.size(), 1);
+	w.wave.assign(items.size(), 0);
 	vector<double> loads;
 	for (auto o : order) {
 		idx_t placed = loads.size();
@@ -46,7 +49,20 @@ Waves PackInOrder(const vector<double> &items, const vector<double> &priority, d
 		} else {
 			loads[placed] += items[o];
 		}
-		w.wave[o] = placed + 1;
+		w.wave[o] = placed;
+	}
+	// Make every wave fit in item order (item_order_fit.hpp). The order moved
+	// out of an over wave is its LOWEST-priority one (then the smallest), the
+	// cheapest to delay. The objective is computed below from these final
+	// waves, so it never describes a packing that was not returned.
+	SettleInItemOrder(items, capacity, w.wave, loads.size(), [&](idx_t a, idx_t b) {
+		if (priority[a] != priority[b]) {
+			return priority[a] < priority[b];
+		}
+		return items[a] < items[b] || (items[a] == items[b] && a < b);
+	});
+	for (auto &wave : w.wave) {
+		wave += 1; // 1-based, the SQL convention
 	}
 	double total = 0, weight = 0;
 	for (idx_t i = 0; i < items.size(); i++) {
@@ -238,7 +254,11 @@ void RegisterBatchingFunctions(ExtensionLoader &loader) {
 	const string shape =
 	    " Takes items and priorities (one per order) and a per-wave capacity. Returns a "
 	    "1-based wave number per order and the priority-weighted mean wave, "
-	    "sum(wave*priority)/sum(priority) — lower is better.";
+	    "sum(wave*priority)/sum(priority) — lower is better. A wave fits when its "
+	    "items, summed in input order in doubles, are at most the capacity; the repair "
+	    "that enforces this may move an order into an EARLIER wave than the algorithm "
+	    "placed it, so it can ship sooner, and avg_weighted_wave is computed from the "
+	    "waves returned.";
 	const string ex = "([3.0,4.0,5.0],[1.0,5.0,1.0], 7.0)";
 
 	AddBatchingFamily(loader, "wave_as_given", AsGiven,

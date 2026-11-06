@@ -67,8 +67,9 @@ SELECT
 FROM inputs;
 ```
 
-`schedule_exact` refuses beyond 14 jobs and `knapsack_exact` is
-pseudo-polynomial, so this works on a scaled-down version of your problem.
+`schedule_exact` refuses beyond 14 jobs and `knapsack_best_of`'s DP is
+pseudo-polynomial (past its limits it silently falls back to greedy), so this
+works on a scaled-down version of your problem.
 A heuristic that is near-optimal on small instances is not guaranteed to be
 near-optimal on large ones — but one that is *far off* on small instances
 will not improve with size.
@@ -121,7 +122,7 @@ algorithm — it only proves the instance is trivial.
 
 ```sql
 SELECT opt_knapsack_greedy_ratio(v, w, cap).total_value
-     < opt_knapsack_exact(v, w, cap).total_value AS fixture_discriminates
+     < opt_knapsack_best_of(v, w, cap).total_value AS fixture_discriminates
 FROM fixture;
 ```
 

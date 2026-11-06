@@ -71,14 +71,26 @@ true
 
 # Every algorithm must return a FEASIBLE packing: no bin over capacity.
 # A search will exploit any function that quietly returns an invalid one.
+# A bin fits when its sizes, summed in ITEM order in doubles, are within
+# capacity: the checker sums with an ordered list_sum, because an unordered
+# sum() has no defined order and doubles do not add associatively.
 query I
 WITH s(sizes) AS (SELECT [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0]),
      p AS (SELECT sizes, opt_pack_local_search(sizes, 1000.0) AS r FROM s),
-     loads AS (SELECT r.assignment[i] AS bin, sizes[i] AS sz
+     loads AS (SELECT r.assignment[i] AS bin, i, sizes[i] AS sz
                FROM p, generate_series(1, len(sizes)) g(i))
-SELECT max(total) <= 1000.0 FROM (SELECT bin, sum(sz) AS total FROM loads GROUP BY bin);
+SELECT max(total) <= 1000.0 FROM (SELECT bin, list_sum(list(sz ORDER BY i)) AS total FROM loads GROUP BY bin);
 ----
 true
+
+# Packed largest first, 0.3 + 0.2 + 0.1 is 0.6; in item order 0.1 + 0.2 +
+# 0.3 is 0.6000000000000001, over a capacity of 0.6. Every member once put
+# all three in one bin.
+query II
+SELECT opt_pack_first_fit_decreasing([0.1, 0.2, 0.3], 0.6).bins_used,
+       list_sum([0.1, 0.2, 0.3]::DOUBLE[]) > 0.6;
+----
+2	true
 
 # A non-finite or negative size is not a packing problem. Both slipped
 # through silently and returned a confident WRONG answer: [-5.0, 3.0]
@@ -156,10 +168,10 @@ WHERE r.assignment[i] < 1 OR r.assignment[i] > r.bins_used;
 ----
 0
 
-# No bin exceeds capacity, for any algorithm.
+# No bin exceeds capacity, for any algorithm, summed in item order.
 query I
 SELECT count(*) FROM (
-  SELECT algo, r.assignment[i] AS bin, sum(sizes[i]) AS load, any_value(cap) AS cap
+  SELECT algo, r.assignment[i] AS bin, list_sum(list(sizes[i] ORDER BY i)) AS load, any_value(cap) AS cap
   FROM results, generate_series(1, len(sizes)) g(i)
   GROUP BY algo, r.assignment[i]
 ) WHERE load > cap;
@@ -172,3 +184,62 @@ SELECT count(*) FROM results
 WHERE r.bins_used < CEIL(list_sum(sizes) / cap);
 ----
 0
+
+# ── decimal sizes: every bin fits in item order ─────────────────────────────
+
+# 2000 sets of 12 sizes from 0.1 to 0.9 at a capacity of 1.0. The members
+# track a running load summed in PLACEMENT order, which can differ from the
+# item-order sum in the last bit; every member once returned such a bin on
+# about one set in a thousand. Bins stay 1-based and contiguous: bins_used is
+# the highest bin and no bin is empty. The lower bound rounds the total
+# first: summed in doubles, twelve tenths totalling 5 can come to
+# 5.000000000000001, whose ceiling is not a bound.
+statement ok
+CREATE TABLE dec AS
+SELECT g, list((1 + hash(g, k) % 9)::DOUBLE / 10 ORDER BY k) AS sizes
+FROM range(0, 2000) a(g), range(0, 12) b(k) GROUP BY g;
+
+statement ok
+CREATE TABLE dec_results AS
+SELECT g, sizes, unnest(['first_fit_decreasing', 'best_fit_decreasing', 'worst_fit_decreasing', 'next_fit',
+                         'local_search', 'bin_completion', 'best_of']) AS algo,
+       unnest([opt_pack_first_fit_decreasing(sizes, 1.0), opt_pack_best_fit_decreasing(sizes, 1.0),
+               opt_pack_worst_fit_decreasing(sizes, 1.0), opt_pack_next_fit(sizes, 1.0),
+               opt_pack_local_search(sizes, 1.0), opt_pack_bin_completion(sizes, 1.0),
+               opt_pack_best_of(sizes, 1.0)]) AS r
+FROM dec;
+
+query I
+SELECT count(*) FILTER (load > 1.0) FROM (
+  SELECT g, algo, r.assignment[i] AS bin, list_sum(list(sizes[i] ORDER BY i)) AS load
+  FROM dec_results, generate_series(1, 12) t(i) GROUP BY ALL);
+----
+0
+
+# local_search accepts a move only when the receiving bin fits in item order.
+# It checked a running load instead, and on 2 of these sets dissolved a bin
+# that the final repair then reopened: it beat first-fit-decreasing on 8
+# sets, not 10.
+query I
+SELECT count(*) FILTER (ls.bins_used < ffd.bins_used) FROM (
+  SELECT g, any_value(r) FILTER (algo = 'local_search') AS ls, any_value(r) FILTER (algo = 'first_fit_decreasing') AS ffd
+  FROM dec_results GROUP BY g);
+----
+10
+
+# Not degenerate: on some bins the same members summed largest first, the
+# order the decreasing members place them in, and in item order differ.
+query I
+SELECT count(*) FILTER (placed <> in_item_order) > 0 FROM (
+  SELECT g, r.assignment[i] AS bin, list_sum(list(sizes[i] ORDER BY sizes[i] DESC, i)) AS placed,
+         list_sum(list(sizes[i] ORDER BY i)) AS in_item_order
+  FROM dec_results, generate_series(1, 12) t(i) WHERE algo = 'first_fit_decreasing' GROUP BY ALL);
+----
+true
+
+query II
+SELECT count(*), count(*) FILTER (list_max(r.assignment) = r.bins_used
+                                  AND len(list_distinct(r.assignment)) = r.bins_used
+                                  AND r.bins_used >= ceil(round(list_sum(sizes), 9))) FROM dec_results;
+----
+14000	14000

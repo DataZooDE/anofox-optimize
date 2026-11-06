@@ -5,6 +5,7 @@
 #include "duckdb/function/scalar_function.hpp"
 #include "duckdb/parser/parsed_data/create_scalar_function_info.hpp"
 
+#include "item_order_fit.hpp"
 #include "register_alias.hpp"
 #include "duckdb_compat/list_vector.hpp"
 #include "duckdb_compat/struct_vector.hpp"
@@ -28,6 +29,16 @@ struct Packing {
 	vector<idx_t> assignment;
 	idx_t bins_used = 0;
 };
+
+//! Make every bin fit in item order (item_order_fit.hpp), moving a bin's
+//! smallest item out while it is over. Every member ends here, so best_of
+//! compares bin counts that are already feasible.
+Packing Settle(const vector<double> &sizes, double capacity, Packing packing) {
+	packing.bins_used = SettleInItemOrder(sizes, capacity, packing.assignment, packing.bins_used, [&](idx_t a, idx_t b) {
+		return sizes[a] < sizes[b] || (sizes[a] == sizes[b] && a < b);
+	});
+	return packing;
+}
 
 //! Order item indices by descending size — the "decreasing" in FFD/BFD/WFD.
 vector<idx_t> OrderBySizeDesc(const vector<double> &sizes) {
@@ -59,7 +70,7 @@ Packing FitPack(const vector<double> &sizes, double capacity,
 		result.assignment[item] = bin;
 	}
 	result.bins_used = loads.size();
-	return result;
+	return Settle(sizes, capacity, std::move(result));
 }
 
 Packing FirstFitDecreasing(const vector<double> &sizes, double capacity) {
@@ -109,6 +120,8 @@ Packing WorstFitDecreasing(const vector<double> &sizes, double capacity) {
 
 //! Next-fit: only ever the most recently opened bin. Deliberately weak —
 //! a search needs a bad-but-valid member of the family to move away from.
+//! It places items in item order, so each bin's running load already is the
+//! item-order sum and Settle never moves an item here.
 Packing NextFit(const vector<double> &sizes, double capacity) {
 	vector<idx_t> order(sizes.size());
 	std::iota(order.begin(), order.end(), 0);
@@ -156,7 +169,19 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 		for (auto candidate_target : targets) {
 			target = candidate_target;
 			trial_assignment = best.assignment;
-			auto trial_loads = loads;
+			// Each bin's members in item order: a move is accepted only when the
+			// receiving bin fits by the item-order rule (item_order_fit.hpp), so
+			// the final Settle never has to undo an emptied bin. The target's
+			// list is left stale on purpose: it is never a receiving bin.
+			auto trial_members = members;
+			auto add = [&](idx_t b, idx_t i) {
+				auto &m = trial_members[b];
+				m.insert(std::lower_bound(m.begin(), m.end(), i), i);
+			};
+			auto drop = [&](idx_t b, idx_t i) {
+				auto &m = trial_members[b];
+				m.erase(std::find(m.begin(), m.end(), i));
+			};
 			relocated_all = true;
 			for (auto item : members[target]) {
 				bool placed = false;
@@ -164,9 +189,9 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 					if (b == target) {
 						continue;
 					}
-					if (trial_loads[b] + sizes[item] <= capacity) {
-						trial_loads[b] += sizes[item];
+					if (ItemOrderLoad(sizes, trial_members[b], item) <= capacity) {
 						trial_assignment[item] = b;
+						add(b, item);
 						placed = true;
 					}
 				}
@@ -185,19 +210,21 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 						if (trial_assignment[other] != b || sizes[other] >= sizes[item]) {
 							continue;
 						}
-						if (trial_loads[b] - sizes[other] + sizes[item] > capacity) {
+						auto without_other = trial_members[b];
+						without_other.erase(std::find(without_other.begin(), without_other.end(), other));
+						if (ItemOrderLoad(sizes, without_other, item) > capacity) {
 							continue;
 						}
 						for (idx_t c = 0; c < bin_count; c++) {
 							if (c == target || c == b) {
 								continue;
 							}
-							if (trial_loads[c] + sizes[other] <= capacity) {
-								trial_loads[b] += sizes[item] - sizes[other];
-								trial_loads[c] += sizes[other];
-								trial_loads[target] -= sizes[item];
+							if (ItemOrderLoad(sizes, trial_members[c], other) <= capacity) {
 								trial_assignment[item] = b;
 								trial_assignment[other] = c;
+								drop(b, other);
+								add(b, item);
+								add(c, other);
 								placed = true;
 								break;
 							}
@@ -229,7 +256,7 @@ Packing LocalSearch(const vector<double> &sizes, double capacity) {
 			improved = true;
 		}
 	}
-	return best;
+	return Settle(sizes, capacity, std::move(best));
 }
 
 //! Bounded bin completion: fill each bin by searching COMPANIONS for a
@@ -346,7 +373,7 @@ Packing BinCompletion(const vector<double> &sizes, double capacity, idx_t max_su
 		bin++;
 	}
 	result.bins_used = bin;
-	return result;
+	return Settle(sizes, capacity, std::move(result));
 }
 
 Packing BinCompletion3(const vector<double> &sizes, double capacity) {
@@ -508,32 +535,33 @@ static void AddPackingFamily(ExtensionLoader &loader, const string &short_name,
 }
 
 void RegisterPackingFunctions(ExtensionLoader &loader) {
+	const string fits = " A bin fits when its sizes, summed in input order in doubles, are at most the capacity.";
 	AddPackingFamily(
 	    loader, "pack_first_fit_decreasing", FirstFitDecreasing,
 	    "Packs items into bins by first-fit-decreasing: sorts items largest first and "
 	    "puts each into the first bin it fits. Fast and near-optimal on typical "
 	    "instances, but provably up to 11/9 of optimal and weak on triplet-style "
 	    "instances. Returns bins_used and a 1-based bin number per input item. An "
-	    "empty item list uses 0 bins; a non-empty list of zero-size items uses 1.",
+	    "empty item list uses 0 bins; a non-empty list of zero-size items uses 1." + fits,
 	    "pack_first_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_best_fit_decreasing", BestFitDecreasing,
 	    "Packs items into bins by best-fit-decreasing: sorts items largest first and "
 	    "puts each into the FULLEST bin it still fits, leaving emptier bins for larger "
-	    "items later. Same signature as the other packing functions.",
+	    "items later. Same signature as the other packing functions." + fits,
 	    "pack_best_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_worst_fit_decreasing", WorstFitDecreasing,
 	    "Packs items into bins by worst-fit-decreasing: puts each item into the "
 	    "EMPTIEST bin it fits, spreading load evenly. Usually uses more bins than "
 	    "best-fit but produces balanced loads. Same signature as the other packing "
-	    "functions.",
+	    "functions." + fits,
 	    "pack_worst_fit_decreasing([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_next_fit", NextFit,
 	    "Packs items into bins by next-fit, in the given order, only ever using the "
 	    "most recently opened bin. The weakest member of the family and the cheapest; "
-	    "included so a search has a poor-but-valid baseline to move away from.",
+	    "included so a search has a poor-but-valid baseline to move away from." + fits,
 	    "pack_next_fit([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_local_search", LocalSearch,
@@ -542,7 +570,7 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "items into other bins — including a swap that displaces a smaller item to a "
 	    "third bin to make room. Repeats until no bin can be emptied. Slower than the "
 	    "greedy members; on triplet-style instances it does not beat them (use "
-	    "bin_completion there). Same signature as the other packing functions.",
+	    "bin_completion there). Same signature as the other packing functions." + fits,
 	    "pack_local_search([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_bin_completion", BinCompletion3,
@@ -552,14 +580,14 @@ void RegisterPackingFunctions(ExtensionLoader &loader) {
 	    "that still fits. Not exhaustive over arbitrary subsets and not optimal, but "
 	    "it recovers the exact three-per-bin fills that make every greedy member "
 	    "stall together on triplet-style instances. Costs O(n^2) per bin. Same "
-	    "signature as the other packing functions.",
+	    "signature as the other packing functions." + fits,
 	    "pack_bin_completion([4.0, 8.0, 1.0], 10.0)");
 	AddPackingFamily(
 	    loader, "pack_best_of", BestOf,
 	    "Runs every packing algorithm in this family and returns whichever used the "
 	    "fewest bins. Costs the sum of the parts and never loses to any single "
 	    "member; use it when you do not want to choose. Same signature as the other "
-	    "packing functions.",
+	    "packing functions." + fits,
 	    "pack_best_of([4.0, 8.0, 1.0], 10.0)");
 }
 

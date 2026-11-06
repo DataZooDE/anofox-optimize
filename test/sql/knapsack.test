@@ -36,12 +36,19 @@ SELECT opt_knapsack_best_of([7.0,4.0,4.0],[5.0,4.0,4.0],8.0).total_value
 ----
 true
 
-# The exact member REFUSES an instance it cannot solve exactly rather
-# than silently returning a heuristic answer that is no longer a bound.
-statement error
-SELECT opt_knapsack_exact([1.0], [1.0], 1e9);
+# knapsack_exact is an ALIAS of knapsack_best_of: inside the limits the two
+# always returned the same value, so the family had one member twice. Past
+# the limits it no longer raises; it returns best_of's greedy fallback.
+query II
+SELECT opt_knapsack_exact([1.0], [1.0], 1e9) = opt_knapsack_best_of([1.0], [1.0], 1e9),
+       opt_knapsack_exact([1.0], [1.0], 1e9).total_value;
 ----
-over the
+1	1.0
+
+query T
+SELECT alias_of FROM duckdb_functions() WHERE function_name = 'anofox_optimize_knapsack_exact';
+----
+anofox_optimize_knapsack_best_of
 
 # Mismatched inputs, NULLs and nonsense are rejected with a reason.
 statement error
@@ -134,13 +141,14 @@ FROM many_solved JOIN many_brute USING (g);
 ----
 true
 
-# When exact would REFUSE (here a 200M-cell table), best_of does NOT error:
-# it returns the best greedy answer, which is feasible but no longer a bound.
+# Past the cell limit (here a 200M-cell table), best_of does NOT error: it
+# returns the best greedy answer, which is feasible but no longer a bound.
 # by-value wins this instance (10 against 6), so best_of must take the max.
-statement error
-SELECT opt_knapsack_exact([10.0, 6.0], [1e8, 5e7], 1e8);
+# knapsack_exact, its alias, returns the same.
+query I
+SELECT opt_knapsack_exact([10.0, 6.0], [1e8, 5e7], 1e8) = opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8);
 ----
-over the
+1
 
 query RRRR
 SELECT opt_knapsack_best_of([10.0, 6.0], [1e8, 5e7], 1e8).total_value,
@@ -201,16 +209,16 @@ WHERE b.total_value <> greatest(e.total_value, r.total_value, gv.total_value);
 ----
 0
 
-# The sweep separates the members both ways. The DP beats both greedy members
-# on some rows; on others greedy wins, because the DP optimizes the weights
-# ROUNDED UP to 0.0001 and so gives away capacity. That is the price of
-# feasibility, and best_of keeps whichever is better.
+# The DP beats both greedy members on some rows. On others greedy would win,
+# because the DP optimizes the weights ROUNDED UP to 0.0001 and so gives away
+# capacity; exact also runs the greedy members and keeps the better answer,
+# so it never loses to them.
 query II
 SELECT count(*) FILTER (e.total_value > greatest(r.total_value, gv.total_value)) > 0,
-       count(*) FILTER (e.total_value < greatest(r.total_value, gv.total_value)) > 0
+       count(*) FILTER (e.total_value < greatest(r.total_value, gv.total_value))
 FROM fine_solved;
 ----
-true	true
+true	0
 
 # ── best_of skips the DP only when greedy is provably optimal ───────────────
 
@@ -289,12 +297,120 @@ SELECT count(*), count(*) FILTER (tw > cap) FROM (
 ----
 7	0
 
-# Decimal weights still reach the optimum: 0.1 + 0.2 fits a capacity of 0.3.
-query RR
+# "Fits" is strict in doubles, as in pack_*: the weights, summed in item order,
+# are at most the capacity. In doubles 0.1 + 0.2 is 0.30000000000000004, over a
+# capacity of 0.3, so taking both is infeasible even though the DP's whole
+# units (1 + 2 <= 3) say otherwise. Every member takes one item, and the
+# reported total_weight is the sum the check used.
+query RRRRIIII
 SELECT opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
-       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value;
+       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_greedy_ratio([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_greedy_value([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_greedy_ratio([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3,
+       opt_knapsack_greedy_value([1.0, 1.0], [0.1, 0.2], 0.3).total_weight <= 0.3;
 ----
-2.0	2.0
+1.0	1.0	1.0	1.0	true	true	true	true
+
+# A sweep of decimal weights (0.0 to 1.0 in steps of 0.1) at decimal
+# capacities (1.0 to 3.9), where selections that fill the capacity exactly
+# in decimal arithmetic are common and about one in ten sums over it in
+# doubles. Every member, and knapsack_by's default, stays within capacity in
+# doubles, and total_weight equals a SQL list_sum of the selected weights in
+# item order.
+statement ok
+CREATE TABLE dec AS
+SELECT g, k, (1 + hash(g, k, 'v') % 20)::DOUBLE AS val,
+       round((hash(g, k, 'w') % 1000)::DOUBLE / 1000 * 10, 0) / 10 AS kg,
+       (10 + hash(g, 'c') % 30)::DOUBLE / 10 AS cap
+FROM range(0, 1000) a(g), range(0, 10) b(k);
+
+statement ok
+CREATE TABLE dec_solved AS
+WITH l AS (SELECT g, list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w, any_value(cap) AS cap FROM dec GROUP BY g)
+SELECT g, v, w, cap, opt_knapsack_exact(v, w, cap) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+       opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
+FROM l;
+
+query IIIIII
+SELECT count(*), count(*) FILTER (e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
+       count(*) FILTER (r.total_weight <= cap), count(*) FILTER (gv.total_weight <= cap),
+       count(*) FILTER (list_sum(list_filter(w, lambda x, i: e.selected[i])) IS NOT DISTINCT FROM e.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: b.selected[i])) IS NOT DISTINCT FROM b.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: r.selected[i])) IS NOT DISTINCT FROM r.total_weight
+                        AND list_sum(list_filter(w, lambda x, i: gv.selected[i])) IS NOT DISTINCT FROM gv.total_weight)
+FROM dec_solved;
+----
+1000	1000	1000	1000	1000	1000
+
+# knapsack_by takes one capacity per call, so its default (best_of) runs the
+# same groups at a capacity of 2.0; the DP's answer sums over it in doubles on
+# some of them.
+query II
+SELECT count(*), count(*) FILTER (tw <= 2.0) FROM (
+  SELECT g, coalesce(list_sum(list(weight ORDER BY item) FILTER (selected)), 0) AS tw
+  FROM opt_knapsack_by('dec', 'k', 'val', 'kg', 2.0, group_col := 'g') GROUP BY g);
+----
+1000	1000
+
+# The optimum by brute force over every subset, once with the weights summed
+# in DECIMAL (the decimal optimum) and once summed in doubles in item order
+# (the strict optimum). The fixture is not degenerate: on some rows the
+# decimal optimum is not feasible in doubles. No member ever beats the strict
+# optimum, which an over-capacity answer could.
+statement ok
+CREATE TABLE dec_brute AS
+SELECT g, max(tv) FILTER (dw <= cap::DECIMAL(18, 1)) AS decimal_optimum, max(tv) FILTER (fw <= cap) AS strict_optimum
+FROM (SELECT g, cap, list_sum(list_filter(v, lambda x, i: (mask >> (i - 1)) & 1 = 1)) AS tv,
+             list_sum(list_filter(w, lambda x, i: (mask >> (i - 1)) & 1 = 1)) AS fw,
+             list_sum(list_transform(list_filter(w, lambda x, i: (mask >> (i - 1)) & 1 = 1),
+                                     lambda x: x::DECIMAL(18, 1))) AS dw
+      FROM dec_solved, range(0, 1024) m(mask))
+GROUP BY g;
+
+query III
+SELECT count(*) FILTER (decimal_optimum > strict_optimum) > 0,
+       count(*) FILTER (greatest(e.total_value, b.total_value, r.total_value, gv.total_value) > strict_optimum),
+       count(*) FILTER (b.total_value < greatest(e.total_value, r.total_value, gv.total_value))
+FROM dec_solved JOIN dec_brute USING (g);
+----
+true	0	0
+
+# exact is NOT always the strict optimum on such weights, and the description
+# says so. The DP's answer sums over the capacity on about 100 of these rows.
+# Dropping its cheapest item alone falls short of the strict optimum on 23;
+# also reading back the best selection one unit lighter, which the table
+# already holds, brings that to 10. The greedy members fall short on 136.
+query III
+SELECT count(*) FILTER (e.total_value < strict_optimum), count(*) FILTER (b.total_value < strict_optimum),
+       count(*) FILTER (greatest(r.total_value, gv.total_value) < strict_optimum)
+FROM dec_solved JOIN dec_brute USING (g);
+----
+10	10	136
+
+# Weights finer than 0.0001 carry NO optimality guarantee, and these pin the
+# documented weakness. Here greedy, on the true weights, takes both
+# 0.00006s (they fit 0.00012 in doubles), although each rounds up to 1 unit
+# against a capacity of 1 unit: exact's answer is not "optimal for the
+# rounded-up weights" either, it is the better of the two.
+query RI
+SELECT opt_knapsack_exact([1.0, 1.0], [0.00006, 0.00006], 0.00012).total_value,
+       opt_knapsack_exact([1.0, 1.0], [0.00006, 0.00006], 0.00012).total_weight <= 0.00012;
+----
+2.0	1
+
+# Here {6, 6} fits (0.00012) and is worth 12, but every weight rounds up to 1
+# unit at a capacity of 1 unit, so the DP takes the 10 alone and best_of skips
+# the DP because greedy's 10 is provably optimal for that ROUNDED instance.
+# Both return 10.
+query RRR
+SELECT opt_knapsack_exact([10.0, 6.0, 6.0], [0.00008, 0.00006, 0.00006], 0.00012).total_value,
+       opt_knapsack_best_of([10.0, 6.0, 6.0], [0.00008, 0.00006, 0.00006], 0.00012).total_value,
+       list_sum([0.00006, 0.00006]::DOUBLE[]) <= 0.00012;
+----
+10.0	10.0	1
 
 # A tiny positive weight never snaps to 0 table units: the tolerance is
 # relative to the weight, not absolute.
@@ -314,8 +430,7 @@ true	true	1.0
 
 # A sweep mixing ordinary weights (1 to 10) with weights from 1e-20 to 1e20
 # at capacities from 5 to 20: the tiny ones force the 10^4 scale, the huge
-# ones once cast to 0 units there. Every answer fits. exact may refuse an
-# instance (TRY makes that NULL) but never returns one over capacity.
+# ones once cast to 0 units there. Every answer fits.
 statement ok
 CREATE TABLE wild AS
 WITH l AS (
@@ -324,12 +439,12 @@ WITH l AS (
                      ELSE 1 + abs(sin(g * 11 + k)) * 9 END ORDER BY k) AS w,
            any_value(5 + abs(sin(g * 5)) * 15) AS cap
     FROM range(0, 200) a(g), range(0, 9) b(k) GROUP BY g)
-SELECT g, cap, w, TRY(opt_knapsack_exact(v, w, cap)) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+SELECT g, cap, w, opt_knapsack_exact(v, w, cap) AS e, opt_knapsack_best_of(v, w, cap) AS b,
        opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
 FROM l;
 
 query IIII
-SELECT count(*), count(*) FILTER (e IS NULL OR e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
+SELECT count(*), count(*) FILTER (e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
        count(*) FILTER (b.total_value >= greatest(r.total_value, gv.total_value, coalesce(e.total_value, 0)))
 FROM wild;
 ----
@@ -346,10 +461,13 @@ true	true
 
 # ── the DP memory budget ────────────────────────────────────────────────────
 
+# The default is 512MB natively and 64MB in DuckDB-Wasm, where every
+# thread's table comes out of one shared 32-bit heap.
 query T
-SELECT current_setting('anofox_optimize_knapsack_max_memory');
+SELECT current_setting('anofox_optimize_knapsack_max_memory')
+       = CASE WHEN (SELECT starts_with(platform, 'wasm') FROM pragma_platform()) THEN '64MB' ELSE '512MB' END;
 ----
-512MB
+true
 
 # The classic fixture scaled to an ~6.4 MB table: within the default budget,
 # exact and best_of both find the optimum of 8 that greedy misses.
@@ -362,27 +480,24 @@ SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value,
 statement ok
 SET anofox_optimize_knapsack_max_memory = '1MB';
 
-# Over the budget, exact refuses and names the setting...
-statement error
-SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5);
+# Over the budget, best_of (and exact, its alias) falls back to the best
+# greedy answer without raising.
+query RR
+SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value,
+       opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
 ----
-anofox_optimize_knapsack_max_memory
-
-# ...and best_of falls back to the best greedy answer without raising.
-query R
-SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
-----
-7.0
+7.0	7.0
 
 # An item heavier than the capacity plays no part in the scaling: at scale 1
-# this table is ~900 bytes, at the 10^4 scale its 123.4567 would force ~8 MB.
+# this table is a few hundred bytes, at the 10^4 scale its 123.4567 would
+# force ~640 KB, over the budget, and the greedy fallback returns 7, not 8.
 statement ok
 SET anofox_optimize_knapsack_max_memory = '1KB';
 
 query R
-SELECT opt_knapsack_exact([9.0, 1.0, 2.0], [123.4567, 1.0, 2.0], 100.0).total_value;
+SELECT opt_knapsack_best_of([9.0, 7.0, 4.0, 4.0], [123.4567, 5.0, 4.0, 4.0], 8.0).total_value;
 ----
-3.0
+8.0
 
 statement ok
 RESET anofox_optimize_knapsack_max_memory;
@@ -406,3 +521,16 @@ statement error
 SET anofox_optimize_knapsack_max_memory = 'banana';
 ----
 anofox_optimize_knapsack_max_memory
+
+# ── exact is best_of ────────────────────────────────────────────────────────
+
+# The alias returns the very same struct, selection included, on every
+# fixture above.
+query IIIIII
+SELECT (SELECT count(*) FILTER (e <> b) FROM many_solved), (SELECT count(*) FILTER (e <> b) FROM fine_solved),
+       (SELECT count(*) FILTER (e <> b) FROM dec_solved), (SELECT count(*) FILTER (e <> b) FROM wild),
+       (SELECT count(*) FILTER (opt_knapsack_exact(v, w, cap) <> opt_knapsack_best_of(v, w, cap)) FROM edge),
+       (SELECT count(*) FILTER (opt_knapsack_exact(v, w, 20.0) <> opt_knapsack_best_of(v, w, 20.0))
+        FROM (SELECT list(val ORDER BY k) AS v, list(kg ORDER BY k) AS w FROM crates));
+----
+0	0	0	0	0	0
