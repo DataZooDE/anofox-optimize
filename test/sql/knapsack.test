@@ -249,3 +249,158 @@ SELECT opt_knapsack_greedy_ratio([5.0, -1.0], [1.0, 1.0], 10.0).total_value,
        opt_knapsack_best_of([5.0, -1.0], [1.0, 1.0], 10.0).total_value;
 ----
 4.0	5.0
+
+# ── boundaries: huge, tiny and near-integral weights ────────────────────────
+
+# Each of these once came back OVER capacity from exact, best_of or both:
+# a huge weight cast to 0 table units (1e300, 2e19, 1e20, and 2e15 once a
+# tiny weight forces the 10^4 scale), a tiny positive weight snapped to 0
+# units, or a near-integral weight snapped down.
+statement ok
+CREATE TABLE edge AS SELECT * FROM (VALUES
+    (1, [1.0], [1e300], 10.0),
+    (2, [1.0], [2e19], 10.0),
+    (3, [5.0, 1.0], [1e20, 1.0], 10.0),
+    (4, [5.0, 1.0], [0.00001, 2e15], 1.0),
+    (5, [1.0], [5e-10], 0.0),
+    (6, [1.0, 1.0], [3.0000000005, 3.0000000005], 6.0),
+    (7, [1.0], [1.0000000005], 1.0),
+    (8, []::DOUBLE[], []::DOUBLE[], 1e12)) t(id, v, w, cap);
+
+query IRRRR
+SELECT id, opt_knapsack_exact(v, w, cap).total_value, opt_knapsack_best_of(v, w, cap).total_value,
+       opt_knapsack_greedy_ratio(v, w, cap).total_value, opt_knapsack_greedy_value(v, w, cap).total_value
+FROM edge ORDER BY id;
+----
+1	0.0	0.0	0.0	0.0
+2	0.0	0.0	0.0	0.0
+3	1.0	1.0	1.0	1.0
+4	5.0	5.0	5.0	5.0
+5	0.0	0.0	0.0	0.0
+6	1.0	1.0	1.0	1.0
+7	0.0	0.0	0.0	0.0
+8	0.0	0.0	0.0	0.0
+
+query I
+SELECT count(*) FROM edge
+WHERE opt_knapsack_exact(v, w, cap).total_weight > cap OR opt_knapsack_best_of(v, w, cap).total_weight > cap;
+----
+0
+
+# The same through opt_knapsack_by's default (best_of), one call per capacity.
+statement ok
+CREATE TABLE edge_items AS
+SELECT id, cap, k, v[k] AS val, w[k] AS kg FROM edge, range(1, 3) r(k) WHERE k <= len(v);
+
+query II
+SELECT count(*), count(*) FILTER (tw > cap) FROM (
+  SELECT id, coalesce(sum(weight) FILTER (selected), 0) AS tw, any_value(capacity) AS cap FROM (
+    SELECT * FROM opt_knapsack_by('(SELECT * FROM edge_items WHERE cap = 10)', 'k', 'val', 'kg', 10.0, group_col := 'id')
+    UNION ALL BY NAME SELECT * FROM opt_knapsack_by('(SELECT * FROM edge_items WHERE cap = 1)', 'k', 'val', 'kg', 1.0, group_col := 'id')
+    UNION ALL BY NAME SELECT * FROM opt_knapsack_by('(SELECT * FROM edge_items WHERE cap = 0)', 'k', 'val', 'kg', 0.0, group_col := 'id')
+    UNION ALL BY NAME SELECT * FROM opt_knapsack_by('(SELECT * FROM edge_items WHERE cap = 6)', 'k', 'val', 'kg', 6.0, group_col := 'id'))
+  GROUP BY id);
+----
+7	0
+
+# Decimal weights still reach the optimum: 0.1 + 0.2 fits a capacity of 0.3.
+query RR
+SELECT opt_knapsack_exact([1.0, 1.0], [0.1, 0.2], 0.3).total_value,
+       opt_knapsack_best_of([1.0, 1.0], [0.1, 0.2], 0.3).total_value;
+----
+2.0	2.0
+
+# A sweep mixing ordinary weights (1 to 10) with weights from 1e-20 to 1e20
+# at capacities from 5 to 20: the tiny ones force the 10^4 scale, the huge
+# ones once cast to 0 units there. Every answer fits. exact may refuse an
+# instance (TRY makes that NULL) but never returns one over capacity.
+statement ok
+CREATE TABLE wild AS
+WITH l AS (
+    SELECT g, list((1 + (g * 31 + k * 17) % 19)::DOUBLE ORDER BY k) AS v,
+           list(CASE WHEN k % 3 = 0 THEN pow(10, sin(g * 3 + k * 7) * 20)
+                     ELSE 1 + abs(sin(g * 11 + k)) * 9 END ORDER BY k) AS w,
+           any_value(5 + abs(sin(g * 5)) * 15) AS cap
+    FROM range(0, 200) a(g), range(0, 9) b(k) GROUP BY g)
+SELECT g, cap, w, TRY(opt_knapsack_exact(v, w, cap)) AS e, opt_knapsack_best_of(v, w, cap) AS b,
+       opt_knapsack_greedy_ratio(v, w, cap) AS r, opt_knapsack_greedy_value(v, w, cap) AS gv
+FROM l;
+
+query IIII
+SELECT count(*), count(*) FILTER (e IS NULL OR e.total_weight <= cap), count(*) FILTER (b.total_weight <= cap),
+       count(*) FILTER (b.total_value >= greatest(r.total_value, gv.total_value, coalesce(e.total_value, 0)))
+FROM wild;
+----
+200	200	200	200
+
+# Not degenerate: it holds weights over 1e15, and the DP beats both greedy
+# members on some rows.
+query II
+SELECT count(*) FILTER (list_max(w) > 1e15) > 0,
+       count(*) FILTER (e.total_value > greatest(r.total_value, gv.total_value)) > 0
+FROM wild;
+----
+true	true
+
+# ── the DP memory budget ────────────────────────────────────────────────────
+
+query T
+SELECT current_setting('anofox_optimize_knapsack_max_memory');
+----
+512MB
+
+# The classic fixture scaled to an ~6.4 MB table: within the default budget,
+# exact and best_of both find the optimum of 8 that greedy misses.
+query RR
+SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value,
+       opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
+----
+8.0	8.0
+
+statement ok
+SET anofox_optimize_knapsack_max_memory = '1MB';
+
+# Over the budget, exact refuses and names the setting...
+statement error
+SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5);
+----
+anofox_optimize_knapsack_max_memory
+
+# ...and best_of falls back to the best greedy answer without raising.
+query R
+SELECT opt_knapsack_best_of([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
+----
+7.0
+
+# An item heavier than the capacity plays no part in the scaling: at scale 1
+# this table is ~900 bytes, at the 10^4 scale its 123.4567 would force ~8 MB.
+statement ok
+SET anofox_optimize_knapsack_max_memory = '1KB';
+
+query R
+SELECT opt_knapsack_exact([9.0, 1.0, 2.0], [123.4567, 1.0, 2.0], 100.0).total_value;
+----
+3.0
+
+statement ok
+RESET anofox_optimize_knapsack_max_memory;
+
+query R
+SELECT opt_knapsack_exact([7.0, 4.0, 4.0], [5e5, 4e5, 4e5], 8e5).total_value;
+----
+8.0
+
+statement error
+SET anofox_optimize_knapsack_max_memory = NULL;
+----
+anofox_optimize_knapsack_max_memory
+
+statement error
+SET anofox_optimize_knapsack_max_memory = '-1';
+----
+anofox_optimize_knapsack_max_memory
+
+statement error
+SET anofox_optimize_knapsack_max_memory = 'banana';
+----
+anofox_optimize_knapsack_max_memory

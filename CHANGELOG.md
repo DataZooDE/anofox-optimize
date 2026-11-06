@@ -2,25 +2,43 @@
 
 ## Unreleased
 
+### Added
+
+- **`anofox_optimize_knapsack_max_memory`** (default `'512MB'`, DuckDB size strings such as `'2GB'`): the
+  largest table `knapsack_exact` and `knapsack_best_of` build for their dynamic program. The table needs
+  8 bytes per capacity unit plus one bit per cell, so one item at a large capacity could pass the
+  50-million-cell limit and still need hundreds of MB. Over the budget `knapsack_exact` raises, naming
+  the setting and its value; `knapsack_best_of` returns its best greedy answer. NULL, negative and
+  unlimited (`'none'`) values are rejected.
+
 ### Changed
 
-- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact`'s table fits
-  (items × (capacity + 1) ≤ 50 million in whole units), so it is the proven optimum there for weights in multiples of 0.0001; above the
-  limit it still returns the best greedy answer without raising. `knapsack_by`'s default `['best_of']`
-  is therefore exact on small instances — on a five-crate fixture it went from 31 to the optimum of 36.
-  Both functions share one limit check. Inside the limit, `best_of` now costs about 5 ns per table cell
-  rather than microseconds per row; it skips the DP when greedy provably is the optimum (every
-  positive-value item fits, or the best-ratio prefix fills the capacity exactly), which helps only on
-  such instances.
+- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact` would accept the instance (at most
+  50 million cells and within `anofox_optimize_knapsack_max_memory`), so it is the proven optimum there
+  for weights in multiples of 0.0001; over either limit it still returns the best greedy answer without
+  raising. `knapsack_by`'s default `['best_of']` is therefore exact on small instances — on a five-crate
+  fixture it went from 31 to the optimum of 36 — and pays the DP's cost once per group. Both functions
+  share one limit check. The DP is skipped when greedy provably is the optimum (every positive-value item
+  fits, nothing fits, or the best-ratio prefix fills the capacity exactly), which helps only on such
+  instances.
+- Items heavier than the capacity no longer influence `knapsack_exact`'s weight scaling, so one
+  irrelevant `123.4567` no longer multiplies the table by 10^4.
 
 ### Fixed
 
-- **`knapsack_exact` could return an over-capacity answer.** Weights not whole at the 10^4 scale were
-  rounded to NEAREST inside the DP table, so items could weigh less there than they really do:
-  `opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007)` took both, 8e-05 against a capacity of
-  7e-05. Such weights are now rounded UP (and the capacity down), so every answer fits; it is the proven
-  optimum when weights and capacity are multiples of 0.0001, and optimal for the rounded-up weights
-  otherwise. `total_weight` is still the sum of the original weights.
+- **`knapsack_exact` could return an over-capacity answer.**
+  - Weights not whole at the 10^4 scale were rounded to NEAREST inside the DP table, so an item could
+    weigh less there than it really does: `opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007)`
+    took both, 8e-05 against a capacity of 7e-05. Such weights are now rounded UP and the capacity down.
+  - An absolute 1e-9 tolerance treated near-whole weights as whole, rounding them DOWN:
+    `[3.0000000005, 3.0000000005]` at capacity 6 took both (6.000000001), and `[5e-10]` at capacity 0 was
+    taken. The tolerance is now a few ulps relative to the value, and a positive weight never becomes 0
+    table units.
+
+  Every answer now fits. It is the proven optimum when weights and capacity are multiples of 0.0001, and
+  optimal for the rounded-up weights otherwise. `total_weight` is still the sum of the original weights.
+- `knapsack_exact` on an instance where no item fits, the empty list included, returns the empty
+  selection without building a table: `opt_knapsack_exact([], [], 1e12)` tried to allocate 8 TB.
 
 ## v2026.10.26
 

@@ -93,8 +93,9 @@ docs:
     the weights and capacity are multiples of 0.0001; finer weights are
     rounded up, so the answer always fits). `knapsack_best_of` is also exact
     whenever `knapsack_exact`'s table fits (items × (capacity + 1) ≤ 50
-    million), and returns its best greedy answer, which is not exact, above
-    that. Everything else is heuristic and carries no guarantee. Functions that would blow up refuse rather than hang —
+    million cells and within `anofox_optimize_knapsack_max_memory`, default
+    `'512MB'`), and returns its best greedy answer, which is not exact,
+    beyond that. Everything else is heuristic and carries no guarantee. Functions that would blow up refuse rather than hang —
     `schedule_exact` rejects more than 14 jobs with an error naming the
     heuristic to use instead.
 
