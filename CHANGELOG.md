@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had failed `LOAD`.
+
+### Fixed
+
+- **wasm artifacts LOAD in DuckDB-Wasm** (#9). Two defects, each enough on its own to break `LOAD`:
+  - the PostHog telemetry client was compiled into the Emscripten build, which left 25 `SSL_*`/`TLS_*`
+    functions as unresolved imports (`t is not a function`). Telemetry is now off under Emscripten, as
+    on MinGW, and vcpkg skips `openssl` for `wasm32`. Native builds keep telemetry;
+  - `scripts/extension-upload.sh` appended a second `duckdb_signature` section to an artifact that
+    already ended with one (`Unknown ABI type of value '208'`). It now replaces the 256-byte placeholder
+    in place, as for native binaries, and `scripts/wasm_signature_sections.py check` requires exactly one
+    section before and after signing. Ported from anofox-forecast#272.
+
+### Added
+
+- **DuckDB-Wasm runtime test** (`test/wasm`, from anofox-forecast): the whole `test/sql` suite runs in
+  DuckDB-Wasm under Node against the v1.5.6 `wasm_eh` artifact, and the v1.5.6 deploy waits for it.
+  After each wasm upload the deploy job downloads what it published, checks the section count and runs
+  `test/wasm/post_upload_smoke.test` on it (`scripts/extension-verify-upload.sh`). `make audit` runs
+  the section walker's self-test, and `make test_wasm` runs the suite against `build/wasm_eh`.
+
 ## v2026.10.26
 
 **Breaking:** every index the solvers return is a 1-based BIGINT, the SQL convention (#7). Producers gain `row_order`.

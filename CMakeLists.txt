@@ -4,9 +4,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 project(AnofoxOptimizeExtension)
 
-# --- Telemetry (disabled on MinGW, where vcpkg cannot build OpenSSL) ---
+# --- Telemetry (disabled on MinGW, where vcpkg cannot build OpenSSL, and on
+# Emscripten) ---
 # Same wiring as anofox-statistics/bayes/forecast. Schema-2 posthog lib.
-if(NOT MINGW)
+# Emscripten (#9): compiled in, the PostHog client leaves ~25 SSL_*/TLS_*
+# functions as unresolved imports of the wasm side module (DuckDB-Wasm ships
+# no OpenSSL), and LOAD fails with "t is not a function". vcpkg.json skips
+# openssl for wasm32 to match.
+if(NOT MINGW AND NOT EMSCRIPTEN)
     find_package(OpenSSL REQUIRED)
 
     add_library(posthog_telemetry_obj OBJECT
@@ -24,6 +29,9 @@ if(NOT MINGW)
     target_compile_features(posthog_telemetry_obj PUBLIC cxx_std_17)
     target_compile_definitions(posthog_telemetry_obj PRIVATE ANOFOX_TELEMETRY_ENABLED)
     set(ANOFOX_TELEMETRY_ENABLED ON)
+elseif(EMSCRIPTEN)
+    message(STATUS "Telemetry disabled: Emscripten (DuckDB-Wasm) build, no OpenSSL to link")
+    set(ANOFOX_TELEMETRY_ENABLED OFF)
 else()
     message(STATUS "Telemetry disabled: OpenSSL not available on MinGW")
     set(ANOFOX_TELEMETRY_ENABLED OFF)

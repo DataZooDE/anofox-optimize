@@ -27,6 +27,10 @@ export DATAZOO_DISABLE_TELEMETRY=1       # environment (1|true|yes)
 Telemetry is also auto-disabled when a CI environment is detected (`CI`,
 `GITHUB_ACTIONS`, `GITLAB_CI`, and similar).
 
+The DuckDB-Wasm (`wasm_*`) and MinGW builds contain no telemetry code at all:
+it needs OpenSSL, which neither toolchain provides. There the
+`anofox_telemetry_*` settings do not exist, so a `SET` of them fails.
+
 ## The guarantee: bounded, enumerated, non-PII
 
 Every property we send is **either** a constant drawn from a small,
