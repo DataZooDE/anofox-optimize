@@ -77,14 +77,44 @@ heuristic and usually good. Its worst case is well known: with capacity 10
 and items (value 10, weight 10) and (value 6, weight 6), ratio ties them and
 may take the 6.
 
-**`exact`** — dynamic programming over capacity. Returns the proven optimum.
+**`exact`** — dynamic programming over capacity. Returns the proven optimum
+when every weight and the capacity are whole multiples of 0.0001. Finer
+weights are rounded **up** to the next 0.0001 and the capacity down, so the
+answer always fits but is optimal only for the rounded-up weights; a greedy
+member working on the true weights can then beat it. Items heavier than the
+capacity are never taken and play no part in the scaling.
 Cost is O(n · capacity) time and memory, so it scales with the *numeric*
 capacity, not just the item count. A capacity of 1,000 with 60 items is
-trivial; a capacity of 10^9 is not.
+trivial; a capacity of 10^9 is not. The table has items × (capacity + 1)
+cells, counting weights in the smallest unit (1, 0.1, … 0.0001) that makes
+every item that can fit, and the capacity, whole. It needs 8 bytes per
+capacity unit plus one bit per cell. `exact` **raises** when the table is
+over 50 million cells, or over the memory budget set with
 
-**`best_of`** — runs the greedy members. It is explicitly **not** exact, and
-its description says so, because a caller who wants a guarantee must ask for
-`exact` and accept its cost.
+```sql
+SET anofox_optimize_knapsack_max_memory = '2GB';   -- default '512MB'
+```
+
+The error names whichever limit was hit.
+
+**`best_of`** — runs both greedy members and, when `exact` would accept the
+instance (the same two limits: 50 million cells and the memory budget),
+`exact` too, and keeps the most valuable answer. Inside the limits it is the
+proven optimum when every weight and the capacity are whole multiples of
+0.0001, and otherwise as good as the better of `exact` on rounded-up weights
+and the greedy members. Over either
+limit it does not raise like `exact` does: it returns the best greedy answer,
+which is **not** exact. A caller who needs a guarantee must still ask for
+`exact`, which raises instead of degrading.
+
+The DP's time and memory grow with items × capacity, so near the limits
+`best_of` is far slower than the greedy members. `knapsack_by` runs
+`best_of` by default and pays that cost once per group. It skips the DP only
+when greedy is provably optimal: every positive-value item fits, nothing
+fits, or the best-ratio prefix fills the capacity exactly (the fractional
+relaxation then has no fractional item). That makes "everything
+fits" instances as cheap as greedy, but on a typical instance, where some
+item has to be left out, it saves nothing.
 
 ### Subset-sum is knapsack with value = weight
 

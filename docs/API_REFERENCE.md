@@ -20,7 +20,7 @@ Example: `anofox_optimize_assortment_best_of([5.0,4.0],[100.0,90.0],[0.0,0.6,0.6
 
 `anofox_optimize_assortment_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
 
-Table macro: the shelf as one row per product: the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: CANNIBALISATION (as assortment_*): a listed product loses the demand that moves to the other listed products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+Table macro: the shelf as one row per product (the anofox integration contract's `selection` schema, for anofox_plot): the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: CANNIBALISATION (as assortment_*): a listed product loses the demand that moves to the other listed products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
 
 Example: `SELECT * FROM opt_assortment_by('products', 'sku', 'margin', 'demand', 'substitution', 24, algorithms := ['top_margin', 'best_of']);`
 
@@ -60,7 +60,7 @@ Example: `anofox_optimize_assortment_recapture_best_of([5.0,4.0],[100.0,90.0],[0
 
 `anofox_optimize_assortment_recapture_by(data, item_col, margin_col, demand_col, substitution_data, shelf, group_col, algorithms)` -> table
 
-Table macro: the shelf as one row per product: the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: RECAPTURE (as assortment_recapture_*): a listed product keeps its demand and gains what moves to it from delisted products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+Table macro: the shelf as one row per product (the anofox integration contract's `selection` schema, for anofox_plot): the group column, model_id (the algorithm), item, margin, demand, listed. MODEL: RECAPTURE (as assortment_recapture_*): a listed product keeps its demand and gains what moves to it from delisted products. substitution_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the fraction of from_id's demand that moves to to_id. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
 
 Example: `SELECT * FROM opt_assortment_recapture_by('products', 'sku', 'margin', 'demand', 'substitution', 24, algorithms := ['top_margin', 'best_of']);`
 
@@ -108,7 +108,7 @@ Example: `anofox_optimize_assortment_top_margin([5.0,4.0],[100.0,90.0],[0.0,0.6,
 
 `anofox_optimize_knapsack_best_of(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-Runs the greedy knapsack members and returns whichever captured more value. Cheap and never loses to any single greedy member, but it is NOT exact — use knapsack_exact when the instance is small enough. Same signature as the other knapsack functions.
+Runs both greedy knapsack members and, when knapsack_exact would accept the instance (the same limits: at most 50 million table cells, within anofox_optimize_knapsack_max_memory), knapsack_exact's dynamic program too, and returns whichever captured the most value. Where the DP runs, the result is the proven optimum when every weight and the capacity are whole multiples of 0.0001; finer weights are rounded up, and the result is then always within capacity but optimal only for the rounded-up weights. Where knapsack_exact would refuse, best_of does NOT raise but silently returns the best greedy answer, which is NOT exact and carries no guarantee — call knapsack_exact if you need to know which case you are in. The DP's time and memory grow with items * capacity, so near the limits it is far slower than the greedy members, and knapsack_by, whose default algorithm is best_of, pays that per group. The DP is skipped when greedy provably is the optimum: every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity exactly. Never loses to any single member. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 
@@ -116,7 +116,7 @@ Example: `anofox_optimize_knapsack_best_of([10.0, 6.0], [5.0, 4.0], 6.0)`
 
 `anofox_optimize_knapsack_by(data, item_col, value_col, weight_col, capacity, group_col, algorithms)` -> table
 
-Table macro: the knapsack as one row per item: the group column, model_id (the algorithm), item, value, weight, selected, capacity. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+Table macro: the knapsack as one row per item (the anofox integration contract's `selection` schema, for anofox_plot): the group column, model_id (the algorithm), item, value, weight, selected, capacity. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
 
 Example: `SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, algorithms := ['greedy_value', 'exact']);`
 
@@ -124,7 +124,7 @@ Example: `SELECT * FROM opt_knapsack_by('shipments', 'id', 'value', 'kg', 20.0, 
 
 `anofox_optimize_knapsack_exact(['DOUBLE[]', 'DOUBLE[]', DOUBLE])` -> `STRUCT(selected BOOLEAN[], total_value DOUBLE, total_weight DOUBLE)`
 
-0/1 knapsack solved EXACTLY by dynamic programming over integer-scaled weights. Returns the true optimum, unlike the greedy members. RAISES rather than degrading when the instance needs too large a table (many items, large capacity, or weights needing fine scaling) — a caller who asked for the exact answer and silently received a heuristic one could not tell its result is no longer a bound. Same signature as the other knapsack functions.
+0/1 knapsack solved by dynamic programming over integer-scaled weights. Returns the proven optimum when every weight and the capacity are whole multiples of 0.0001, unlike the greedy members. Finer weights are rounded UP to the next 0.0001 (and the capacity down), so the answer is always within capacity but optimal only for the rounded-up weights. Items heavier than the capacity are never taken and do not affect the scaling. The table has items * (capacity + 1) cells, counting weights in the smallest unit (1, 0.1, ... 0.0001) that makes every item that can fit, and the capacity, whole. It needs 8 bytes per capacity unit plus one bit per cell. RAISES rather than degrading when the table is over 50 million cells or over the memory budget set by anofox_optimize_knapsack_max_memory (default '512MB'), since a caller who asked for the exact answer and silently received a heuristic one could not tell its result is no longer a bound. Time and memory grow with items * capacity, so near those limits it is far slower than the greedy members. Same signature as the other knapsack functions.
 
 Example: `anofox_optimize_knapsack_exact([10.0, 6.0], [5.0, 4.0], 6.0)`
 
@@ -244,7 +244,7 @@ Example: `anofox_optimize_portfolio_best_of([0.12,0.10,0.10],[0.04,0.036,-0.01,0
 
 `anofox_optimize_portfolio_by(data, item_col, return_col, covariance_data, max_holdings, weight_cap, group_col, algorithms)` -> table
 
-Table macro: a portfolio as one row per asset: the group column, model_id (the algorithm), item, expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; a pair given once counts both ways. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+Table macro: a portfolio as one row per asset (the anofox integration contract's `weights` schema, for anofox_plot): the group column, model_id (the algorithm), item, expected_return, weight. covariance_data is a table or '(SELECT ...)' with columns from_id, to_id, value; a pair given once counts both ways. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
 
 Example: `SELECT * FROM opt_portfolio_by('assets', 'ticker', 'expected_return', 'covariance', 5, 0.3);`
 
@@ -364,7 +364,7 @@ Example: `anofox_optimize_sequence_best_of([0.0,5.0,9.0,5.0,0.0,3.0,9.0,3.0,0.0]
 
 `anofox_optimize_sequence_by(data, item_col, setup_data, group_col, algorithms)` -> table
 
-Table macro: a sequence as one row per item in run order: the group column, model_id (the algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the cost of running to_id right after from_id; a missing pair costs 0. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
+Table macro: a sequence as one row per item in run order (the anofox integration contract's `sequence` schema, for anofox_plot): the group column, model_id (the algorithm), position, item, setup (from the item before; 0 for the first), cumulative_setup. setup_data is a table or '(SELECT ...)' with columns from_id, to_id, value: the cost of running to_id right after from_id; a missing pair costs 0. Each group of data is one instance, solved by every algorithm in algorithms (default ['best_of']); data is a table name or a '(SELECT ...)' string, the column arguments are column names.
 
 Example: `SELECT * FROM opt_sequence_by('stops', 'stop', 'distances', algorithms := ['nearest_neighbour', 'two_opt']);`
 

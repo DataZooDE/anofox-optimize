@@ -40,6 +40,16 @@ SELECT 'g' || (i % 2) AS "my group", i AS item, (3 + (i * 7) % 11)::DOUBLE AS v,
        0.04 + 0.01 * (i % 5) AS ret
 FROM range(0, 16) t(i);
 
+# Two depots, capacity 20, built so the knapsack members disagree: at north the most valuable crate (n1) fills
+# the truck alone (21 against 34); at south the best-ratio crate (s1) blocks the two crates that make the optimum
+# (31 against 36), and the most valuable one (s2) leaves room for nothing (27).
+statement ok
+CREATE TABLE crates AS SELECT * FROM (VALUES
+    ('north', 'n1', 21.0, 20.0), ('north', 'n2', 10.0, 6.0), ('north', 'n3', 10.0, 6.0), ('north', 'n4', 10.0, 6.0),
+    ('north', 'n5', 3.0, 1.0), ('north', 'n6', 7.0, 4.0), ('north', 'n7', 4.0, 3.0),
+    ('south', 's1', 11.0, 2.0), ('south', 's2', 27.0, 19.0), ('south', 's3', 18.0, 10.0), ('south', 's4', 18.0, 10.0),
+    ('south', 's5', 2.0, 7.0)) t(depot, crate, val, kg);
+
 statement ok
 CREATE TABLE many_pairs AS
 SELECT a AS from_id, b AS to_id, round(abs(sin(a * 3 + b)) * 10, 3) AS value,
@@ -153,6 +163,26 @@ SELECT count(DISTINCT total_value) > 1 FROM (PIVOT (FROM opt_knapsack_objectives
 ----
 true
 
+# The selection table: the selected crates fit and add up to the objectives' total_value; exact equals the optimum
+# found by trying every subset, and each greedy member falls measurably short of it.
+query TRRRR
+WITH it AS (SELECT depot, row_number() OVER (PARTITION BY depot ORDER BY crate) - 1 AS k, val, kg FROM crates),
+     brute AS (SELECT depot, max(tv) AS optimum FROM (SELECT depot, mask, sum(val) AS tv, sum(kg) AS tw
+               FROM it, range(0, 128) m(mask) WHERE (mask >> k) & 1 = 1 GROUP BY ALL) WHERE tw <= 20 GROUP BY depot),
+     l AS (FROM opt_knapsack_by('crates', 'crate', 'val', 'kg', 20.0, group_col := 'depot',
+                                algorithms := ['exact', 'greedy_ratio', 'greedy_value'])),
+     o AS (SELECT depot, model_id, value FROM opt_knapsack_objectives_by('crates', 'crate', 'val', 'kg', 20.0,
+               group_col := 'depot', algorithms := ['exact', 'greedy_ratio', 'greedy_value']) WHERE metric = 'total_value'),
+     per AS (SELECT depot, model_id, sum(value) FILTER (selected) AS tv, sum(weight) FILTER (selected) AS tw,
+                    any_value(capacity) AS cap FROM l GROUP BY ALL),
+     ok AS (SELECT depot, model_id, tv FROM per JOIN o USING (depot, model_id) WHERE tw <= cap AND tv = o.value)
+SELECT depot, optimum::DOUBLE, any_value(tv) FILTER (model_id = 'exact'), any_value(tv) FILTER (model_id = 'greedy_ratio'),
+       any_value(tv) FILTER (model_id = 'greedy_value')
+FROM ok JOIN brute USING (depot) GROUP BY ALL HAVING count(*) = 3 ORDER BY depot;
+----
+north	34.0	34.0	34.0	21.0
+south	36.0	36.0	31.0	27.0
+
 # ── sequence ─────────────────────────────────────────────────────────────────
 
 query TITRR
@@ -184,6 +214,40 @@ SELECT count(*) FROM per JOIN o USING ("my group", model_id)
 WHERE o.metric = 'total_setup' AND (abs(total - o.value) > 1e-9 OR abs(last - o.value) > 1e-9 OR n <> 8);
 ----
 0
+
+# The sequence table per (group, algorithm): positions 1..n, cumulative_setup the running sum of setup, the last
+# one the objectives' total_setup.
+query I
+WITH l AS (FROM opt_sequence_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)', group_col := 'my group',
+                                algorithms := ['as_given', 'nearest_neighbour', 'two_opt'])),
+     o AS (FROM opt_sequence_objectives_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)',
+                                           group_col := 'my group', algorithms := ['as_given', 'nearest_neighbour', 'two_opt'])),
+     run AS (SELECT *, sum(setup) OVER (PARTITION BY "my group", model_id ORDER BY position) AS running FROM l),
+     per AS (SELECT "my group", model_id, list(position ORDER BY position) AS ps, bool_and(abs(cumulative_setup - running) < 1e-9) AS sums,
+                    arg_max(cumulative_setup, position) AS last FROM run GROUP BY ALL)
+SELECT count(*) FROM per JOIN o USING ("my group", model_id)
+WHERE ps <> range(1, 9)::BIGINT[] OR NOT sums OR abs(last - o.value) > 1e-9;
+----
+0
+
+# The members disagree measurably: two_opt is far below the given order, and no member beats the optimum found by
+# trying every order (an open path over 8 stops; two_opt is a local search and stops above it).
+query TRRR
+WITH RECURSIVE p(g, last, seen, cost) AS (
+    SELECT "my group", item, [item], 0.0::DOUBLE FROM many
+    UNION ALL
+    SELECT p.g, m.item, list_append(p.seen, m.item), p.cost + coalesce(d.value, 0)
+    FROM p JOIN many m ON m."my group" = p.g AND NOT list_contains(p.seen, m.item)
+    LEFT JOIN many_pairs d ON d.from_id = p.last AND d.to_id = m.item),
+     brute AS (SELECT g AS "my group", min(cost) AS optimum FROM p WHERE len(seen) = 8 GROUP BY g),
+     o AS (FROM opt_sequence_objectives_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)',
+                                           group_col := 'my group', algorithms := ['as_given', 'two_opt']))
+SELECT "my group", round(optimum, 3), round(any_value(value) FILTER (model_id = 'two_opt'), 3),
+       round(any_value(value) FILTER (model_id = 'as_given'), 3)
+FROM o JOIN brute USING ("my group") GROUP BY ALL HAVING min(value) >= optimum - 1e-9 ORDER BY 1;
+----
+g0	8.869	11.013	46.749
+g1	14.577	21.934	40.239
 
 # ── assortment ───────────────────────────────────────────────────────────────
 
@@ -222,6 +286,22 @@ WITH l AS (FROM opt_assortment_by('many', 'item', 'margin', 'demand',
 SELECT count(*) FROM per JOIN o USING ("my group", model_id) WHERE n <> o.items_listed OR n > 3 OR n < 1;
 ----
 0
+
+# Every assortment member, under either model, fills the shelf exactly in every group.
+query II
+WITH c AS (FROM opt_assortment_by('many', 'item', 'margin', 'demand',
+                                  '(SELECT from_id, to_id, frac AS value FROM many_pairs WHERE from_id <> to_id)', 3,
+                                  group_col := 'my group',
+                                  algorithms := ['best_of', 'greedy_marginal', 'local_search', 'top_margin'])),
+     r AS (FROM opt_assortment_recapture_by('many', 'item', 'margin', 'demand',
+                                  '(SELECT from_id, to_id, frac AS value FROM many_pairs WHERE from_id <> to_id)', 3,
+                                  group_col := 'my group',
+                                  algorithms := ['best_of', 'greedy_marginal', 'local_search', 'top_margin'])),
+     per AS (SELECT 'c' AS m, "my group", model_id, count(*) FILTER (listed) AS n FROM c GROUP BY ALL
+             UNION ALL SELECT 'r', "my group", model_id, count(*) FILTER (listed) FROM r GROUP BY ALL)
+SELECT count(*) FILTER (n = 3), count(*) FROM per;
+----
+16	16
 
 # ── portfolio ────────────────────────────────────────────────────────────────
 
@@ -283,39 +363,81 @@ SELECT * FROM opt_sequence_by('stops', 'stop', '(SELECT NULL AS from_id, ''a'' A
 ----
 <REGEX>:.*opt_sequence_by: setup_data has a NULL from_id.*
 
+# The long forms' columns are their contract schema plus model_id, the group column and row_order, nothing else:
+# anofox_plot facets by any other column with more than one value.
+query TT
+WITH c AS (
+    SELECT 'knapsack' AS f, column_name FROM (DESCRIBE SELECT * FROM opt_knapsack_by('crates', 'crate', 'val', 'kg', 20.0, group_col := 'depot'))
+    UNION ALL SELECT 'sequence', column_name FROM (DESCRIBE SELECT * FROM opt_sequence_by('stops', 'stop', 'dist', group_col := 'stop'))
+    UNION ALL SELECT 'assortment', column_name FROM (DESCRIBE SELECT * FROM opt_assortment_by('prods', 'sku', 'margin', 'demand', 'subst', 2, group_col := 'sku'))
+    UNION ALL SELECT 'assortment_recapture', column_name FROM (DESCRIBE SELECT * FROM opt_assortment_recapture_by('prods', 'sku', 'margin', 'demand', 'subst', 2, group_col := 'sku'))
+    UNION ALL SELECT 'portfolio', column_name FROM (DESCRIBE SELECT * FROM opt_portfolio_by('assets', 'ticker', 'ret', 'cov', 2, 0.6, group_col := 'ticker')))
+SELECT f, string_agg(column_name, ', ' ORDER BY column_name) FROM c
+WHERE column_name NOT IN ('model_id', 'row_order', 'depot', 'stop', 'sku', 'ticker')
+GROUP BY f ORDER BY f;
+----
+assortment	demand, item, listed, margin
+assortment_recapture	demand, item, listed, margin
+knapsack	capacity, item, selected, value, weight
+portfolio	expected_return, item, weight
+sequence	cumulative_setup, item, position, setup
+
 # ── discovery ────────────────────────────────────────────────────────────────
 
-# The objectives are summary producers; the long forms have no contract schema yet and carry only the family tag.
+# Every long form produces a contract schema (selection, sequence, weights), every objectives a summary.
 query TT
 SELECT function_name, tags['anofox.output'] FROM duckdb_functions()
 WHERE tags['anofox.contract'] = '1' AND function_name LIKE 'opt\_%' ESCAPE '\' ORDER BY 1;
 ----
+opt_assortment_by	selection
 opt_assortment_objectives_by	summary
+opt_assortment_recapture_by	selection
 opt_assortment_recapture_objectives_by	summary
+opt_knapsack_by	selection
 opt_knapsack_objectives_by	summary
 opt_pack_by	assignment
 opt_pack_objectives_by	summary
+opt_portfolio_by	weights
 opt_portfolio_objectives_by	summary
 opt_schedule_by	schedule
 opt_schedule_objectives_by	summary
+opt_sequence_by	sequence
 opt_sequence_objectives_by	summary
 opt_wave_by	assignment
 opt_wave_objectives_by	summary
 
+query TT
+SELECT function_name, tags['anofox.output'] FROM duckdb_functions()
+WHERE tags['anofox.contract'] = '1' AND tags['anofox.family'] = 'optimize'
+  AND regexp_matches(function_name, '^anofox_optimize_(knapsack|sequence|assortment|assortment_recapture|portfolio)_by$')
+ORDER BY 1;
+----
+anofox_optimize_assortment_by	selection
+anofox_optimize_assortment_recapture_by	selection
+anofox_optimize_knapsack_by	selection
+anofox_optimize_portfolio_by	weights
+anofox_optimize_sequence_by	sequence
+
+# A description names the schema it produces, so a reader of duckdb_functions() knows what plots it.
 query I
 SELECT count(*) FROM duckdb_functions()
-WHERE function_name IN ('opt_knapsack_by', 'opt_sequence_by', 'opt_assortment_by', 'opt_assortment_recapture_by',
-                        'opt_portfolio_by', 'anofox_optimize_knapsack_by', 'anofox_optimize_sequence_by',
-                        'anofox_optimize_assortment_by', 'anofox_optimize_assortment_recapture_by',
-                        'anofox_optimize_portfolio_by')
-  AND tags['anofox.family'] = 'optimize' AND tags['anofox.contract'] IS NULL;
+WHERE tags['anofox.contract'] = '1' AND tags['anofox.output'] IN ('selection', 'sequence', 'weights')
+  AND NOT contains(description, 'contract''s `' || tags['anofox.output'] || '` schema');
 ----
-10
+0
+
+# The assortment descriptions still open their model sentence with MODEL: and name the sibling.
+query TT
+SELECT function_name, regexp_extract(description, 'MODEL: ([A-Z]+) \(as ([a-z_]+)\*\)', 2) FROM duckdb_functions()
+WHERE function_name IN ('opt_assortment_by', 'opt_assortment_recapture_by') ORDER BY 1;
+----
+opt_assortment_by	assortment_
+opt_assortment_recapture_by	assortment_recapture_
 
 query I
 SELECT count(*) FROM duckdb_functions() WHERE tags['anofox.contract'] = '1';
 ----
-22
+32
 
 query I
 WITH t AS (FROM opt_sequence_by('many', 'item', '(SELECT from_id, to_id, value FROM many_pairs)', group_col := 'my group',

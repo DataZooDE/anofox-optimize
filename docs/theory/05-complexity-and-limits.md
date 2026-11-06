@@ -9,8 +9,12 @@ Only two functions return a proven optimum, and both say so in their names.
 
 | Function | Guarantee | Cost | Limit |
 |---|---|---|---|
-| `knapsack_exact` | proven optimum | O(n · capacity) | scales with **numeric capacity** |
+| `knapsack_exact` | proven optimum for weights in multiples of 0.0001; finer weights are rounded up (always feasible, optimal for the rounded weights) | O(n · capacity) | raises over **50 million cells** or over `anofox_optimize_knapsack_max_memory` (default `'512MB'`) |
 | `schedule_exact` | proven optimum | exponential | refuses above **14 jobs** |
+
+`knapsack_best_of` runs `knapsack_exact` too whenever the table is within its
+limits, and then carries the same guarantee. Over them it returns its best
+greedy answer without raising, and that answer is not exact.
 
 Everything else is heuristic and carries no guarantee. Some have known
 worst-case bounds — `first_fit_decreasing` never exceeds `11/9 · OPT + 6/9`
@@ -27,7 +31,9 @@ bound you can compute yourself. See
 60 items with capacity 1,000 is instant. The same 60 items with capacity
 1,000,000,000 is not, because the DP table is indexed by capacity. If your
 capacity is a large continuous quantity, scale your units down — capacity in
-pallets rather than grams — or use `knapsack_best_of`.
+pallets rather than grams — or use `knapsack_best_of`, which stays exact within
+`knapsack_exact`'s limits and returns its best greedy answer beyond them.
+`knapsack_by`'s default (`best_of`) pays the DP's cost once per group.
 
 **Scheduling's cost scales with job count.** `schedule_exact` explores states
 over subsets of jobs, so cost roughly doubles per additional job regardless of

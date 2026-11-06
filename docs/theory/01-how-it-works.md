@@ -66,10 +66,17 @@ cluster near half the capacity; bin completion is the reverse. Running all of
 them and keeping the winner costs a small multiple of running one, and cannot
 be worse than any single member.
 
-`best_of` deliberately does **not** call the exact solvers. Silently going
-exponential past some hidden size threshold is exactly the surprise a library
-should not spring on you; if you want the optimum, you ask for it by name and
-accept the size limit that comes with it.
+`best_of` does **not** call an exact solver that can go exponential.
+Silently going exponential past some hidden size threshold is exactly the
+surprise a library should not spring on you; if you want the optimum, you ask
+for it by name and accept the size limit that comes with it.
+
+The one exception is knapsack. `knapsack_exact`'s cost is bounded by its
+table size, not exponential, so `knapsack_best_of` also runs it whenever the
+table is within its limits. Over them it quietly returns the best greedy
+answer, which is **not** exact — call `knapsack_exact` when you need to know
+which case you are in. Limits and rounding:
+[Packing and Knapsack](02-packing-and-knapsack.md#knapsack-knapsack_).
 
 ## Feasibility is not optional
 

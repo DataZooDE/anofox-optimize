@@ -1,5 +1,80 @@
 # Changelog
 
+## Unreleased
+
+The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had failed `LOAD`. The other families' decisions plot too: anofox-visualization v2026.11.5 has a schema for each.
+
+### Added
+
+- **`selection`, `sequence` and `weights` producers** (#19, #20): the long forms are tagged in
+  `duckdb_functions()` with `anofox.contract = '1'` and the schema they already returned, so `anofox_plot(t)`
+  draws them. No column changes.
+  - `knapsack_by`, `assortment_by` and `assortment_recapture_by` return `selection`: a bar per item, picked or not;
+  - `sequence_by` returns `sequence`: a step line of the cumulative setup, one step per position and item;
+  - `portfolio_by` returns `weights`: the weight per asset.
+- The visualization pickup check renders these five and checks their values: every item a bar of its measure
+  and its picked flag, every step at its cumulative setup, every asset a segment of its weight.
+- **DuckDB-Wasm runtime test** (`test/wasm`, from anofox-forecast): the whole `test/sql` suite runs in
+  DuckDB-Wasm under Node against the v1.5.6 `wasm_eh` artifact, and the v1.5.6 deploy waits for it.
+  The harness compares the way DuckDB's own runner does: integers exactly (BIGINT keeps its precision),
+  text exactly, doubles within 1e-9 relative, by each column's real type. It checks column and row
+  counts first, and fails on any record keyword it does not support or any record that runs over 60 s.
+  `extension-upload.sh` LOADs the exact bytes and runs `test/wasm/post_upload_smoke.test` on them
+  before the first upload, so an artifact that fails never reaches the versioned or latest path.
+  After the upload the deploy job confirms that what it published is byte-identical to those bytes
+  (`scripts/extension-verify-upload.sh`).
+  `make audit` runs the self-tests of the section walker and of the comparator, and `make test_wasm`
+  runs the suite against `build/wasm_eh`.
+- **`wasm_eh` in the community registry**: the descriptor no longer excludes it. `wasm_mvp` stays excluded,
+  because there an extension's errors reach the caller as `_setThrew is not defined` instead of their
+  message. `wasm_threads` stays excluded because nothing tests it (no Node bundle).
+- **`anofox_optimize_knapsack_max_memory`** (default `'512MB'`, DuckDB size strings such as `'2GB'`): the
+  largest table `knapsack_exact` and `knapsack_best_of` build for their dynamic program, next to the
+  existing 50-million-cell limit. The table needs 8 bytes per capacity unit plus one bit per cell, so one
+  item at a large capacity could pass the cell limit and still need hundreds of MB. Over the budget
+  `knapsack_exact` raises, naming the setting and its value. NULL, negative and unlimited (`'none'`)
+  values are rejected.
+
+### Changed
+
+- `knapsack_best_of` also runs the exact DP whenever `knapsack_exact` would accept the instance (both
+  limits above, one shared check), so it is the proven optimum there for weights in multiples of 0.0001;
+  beyond them it still returns the best greedy answer without raising. `knapsack_by`'s default
+  `['best_of']` is therefore exact on small instances — on a five-crate fixture it went from 31 to the
+  optimum of 36 — and pays the DP's cost once per group. The DP is skipped when greedy provably is the
+  optimum (every positive-value item fits, nothing fits, or the best-ratio prefix fills the capacity
+  exactly), which helps only on such instances.
+- Items heavier than the capacity no longer influence `knapsack_exact`'s weight scaling, so one
+  irrelevant `123.4567` no longer multiplies the table by 10^4.
+
+### Fixed
+
+- **wasm artifacts LOAD in DuckDB-Wasm** (#9). Two defects, each enough on its own to break `LOAD`:
+  - the PostHog telemetry client was compiled into the Emscripten build, which left 25 `SSL_*`/`TLS_*`
+    functions as unresolved imports (`t is not a function`). Telemetry is now off under Emscripten, as
+    on MinGW, and vcpkg skips `openssl` for `wasm32`. Native builds keep telemetry;
+  - `scripts/extension-upload.sh` appended a second `duckdb_signature` section to an artifact that
+    already ended with one (`Unknown ABI type of value '208'`). It now replaces the 256-byte placeholder
+    in place, as for native binaries, and `scripts/wasm_signature_sections.py check` requires exactly one
+    section before signing and again on the signed artifact. Ported from anofox-forecast#272.
+- **`SET anofox_telemetry_enabled = false` works in every build.** The wasm and MinGW builds, which have no
+  telemetry, did not register the `anofox_telemetry_*` options, so the documented opt-out failed with
+  "unrecognized configuration parameter". The options now exist everywhere; there they change nothing, and
+  `anofox_telemetry_enabled` defaults to `false`.
+- **`knapsack_exact` could return an over-capacity answer.**
+  - Weights not whole at the 10^4 scale were rounded to NEAREST inside the DP table, so an item could
+    weigh less there than it really does: `opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007)`
+    took both, 8e-05 against a capacity of 7e-05. Such weights are now rounded UP and the capacity down.
+  - An absolute 1e-9 tolerance treated near-whole weights as whole, rounding them DOWN:
+    `[3.0000000005, 3.0000000005]` at capacity 6 took both (6.000000001), and `[5e-10]` at capacity 0 was
+    taken. The tolerance is now a few ulps relative to the value, and a positive weight never becomes 0
+    table units.
+
+  Every answer now fits. It is the proven optimum when weights and capacity are multiples of 0.0001, and
+  optimal for the rounded-up weights otherwise. `total_weight` is still the sum of the original weights.
+- `knapsack_exact` on an instance where no item fits, the empty list included, returns the empty
+  selection without building a table: `opt_knapsack_exact([], [], 1e12)` tried to allocate 8 TB.
+
 ## v2026.10.26
 
 **Breaking:** every index the solvers return is a 1-based BIGINT, the SQL convention (#7). Producers gain `row_order`.

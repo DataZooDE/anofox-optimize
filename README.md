@@ -63,8 +63,11 @@ FROM shipments;
 ## Honesty about guarantees
 
 Two functions return a **proven optimum** and say so in their names:
-`knapsack_exact` and `schedule_exact`. Everything else is heuristic and comes
-with no guarantee attached.
+`knapsack_exact` and `schedule_exact`. Knapsack's guarantee needs weights in
+multiples of 0.0001 and a table within its limits, and `knapsack_best_of` is
+exact only inside those limits; see
+[docs/theory/02](docs/theory/02-packing-and-knapsack.md#knapsack-knapsack_).
+Everything else is heuristic and comes with no guarantee attached.
 
 Each family also ships a deliberately **weak** member (`pack_next_fit`,
 `portfolio_top_return`, `assortment_top_margin`, `sequence_as_given`). You
@@ -120,14 +123,16 @@ SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 
   In a schedule each group is a machine: one lane of the Gantt chart. The assignment
   plot does not separate groups, so plot packings and waves one group at a time
   (`WHERE site = 'w1'`).
-- `knapsack_by`, `sequence_by`, `assortment_by`, `assortment_recapture_by` and
-  `portfolio_by` give the other families' decisions as long tables too. Their
+- `knapsack_by`, `assortment_by` and `assortment_recapture_by` plot which items
+  were picked (`selection`), `sequence_by` the run order with its cumulative setup
+  (`sequence`), and `portfolio_by` the weights (`weights`). Their
   `*_objectives_by` plot as model comparisons.
 - **A matrix argument is a pairs table** with the columns `from_id, to_id, value`:
   `setup_data`, `substitution_data` or `covariance_data`. A missing pair is 0;
   a covariance pair given once counts both ways.
-- The tables follow the anofox integration contract (`assignment`, `schedule` and
-  `summary`), and `duckdb_functions()` tags the producers.
+- The tables follow the anofox integration contract (`assignment`, `schedule`,
+  `selection`, `sequence`, `weights` and `summary`), and `duckdb_functions()` tags
+  the producers.
 - Plan and details: [docs/ANOFOX_CONTRACT_PLAN.md](docs/ANOFOX_CONTRACT_PLAN.md).
 
 ## Documentation

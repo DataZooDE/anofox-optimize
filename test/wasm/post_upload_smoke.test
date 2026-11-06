@@ -1,0 +1,56 @@
+# name: test/wasm/post_upload_smoke.test
+# description: Post-upload smoke test (#9). Run by scripts/verify-wasm-artifact.sh
+#   against the bytes the deploy job just uploaded (or would have uploaded), in
+#   the DuckDB-Wasm Node harness. Requires only anofox_optimize: the deploy job's
+#   check must not depend on any other extension being available.
+# group: [anofox_optimize]
+
+require anofox_optimize
+
+# The Falkenauer triplet instance from test/sql/packing.test: 30 items summing
+# to exactly 10000 that split into ten exact triplets of 1000, so the optimum
+# is 10 bins by construction. A wasm build that loads but computes nonsense
+# must not pass, so assert the known spread, not just "it runs".
+statement ok
+CREATE TABLE triplet AS
+SELECT [418.0,274.0,301.0,392.0,270.0,251.0,269.0,290.0,282.0,437.0,440.0,261.0,483.0,391.0,458.0,
+        318.0,315.0,403.0,456.0,309.0,254.0,307.0,437.0,266.0,289.0,275.0,268.0,291.0,314.0,281.0] AS sizes;
+
+# First-fit-decreasing stalls at 12; bin completion breaks the greedy tie at 11.
+query II
+SELECT opt_pack_first_fit_decreasing(sizes, 1000.0).bins_used,
+       opt_pack_bin_completion(sizes, 1000.0).bins_used
+FROM triplet;
+----
+12	11
+
+# best_of never loses to a member and never beats the optimum of 10.
+query I
+SELECT opt_pack_best_of(sizes, 1000.0).bins_used BETWEEN 10 AND 11 FROM triplet;
+----
+true
+
+# The packing is feasible: one assignment per item, every bin id in
+# 1..bins_used, no bin over capacity.
+query III
+WITH p AS (SELECT sizes, opt_pack_best_of(sizes, 1000.0) AS r FROM triplet),
+     loads AS (SELECT r.assignment[i] AS bin, sizes[i] AS sz, r.bins_used AS n
+               FROM p, generate_series(1, len(sizes)) g(i)),
+     bins AS (SELECT bin, any_value(n) AS n, sum(sz) AS total FROM loads GROUP BY bin)
+SELECT (SELECT len(r.assignment) FROM p),
+       bool_and(bin BETWEEN 1 AND n),
+       max(total) <= 1000.0
+FROM bins;
+----
+30	true	true
+
+# The table-function long form: one row per item.
+statement ok
+CREATE TABLE cartons AS
+SELECT i AS carton, sizes[i] AS size
+FROM triplet, generate_series(1, 30) g(i);
+
+query I
+SELECT count(*) FROM opt_pack_by('cartons', 'carton', 'size', 1000.0);
+----
+30

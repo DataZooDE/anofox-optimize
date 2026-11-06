@@ -131,6 +131,20 @@ jobs:
           path: |
             /tmp/extension
 
+      # Needed by the Deploy step for the wasm archs the harness can boot (#9):
+      # extension-upload.sh LOADs the exact bytes in the DuckDB-Wasm Node
+      # harness BEFORE uploading them.
+      - uses: actions/setup-node@v4
+        if: ${{ matrix.duckdb_arch == 'wasm_eh' || matrix.duckdb_arch == 'wasm_mvp' }}
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: test/wasm/package-lock.json
+
+      - name: Install WASM harness dependencies
+        if: ${{ matrix.duckdb_arch == 'wasm_eh' || matrix.duckdb_arch == 'wasm_mvp' }}
+        run: npm --prefix test/wasm ci --ignore-scripts
+
       - name: Deploy
         shell: bash
         env:
@@ -148,3 +162,8 @@ jobs:
           export EXT_VERSION=`git tag --points-at HEAD`
           export EXT_VERSION=${EXT_VERSION:=`git log -1 --format=%h`}
           ${{ inputs.deploy_script }} ${{ inputs.extension_name }} $EXT_VERSION $DUCKDB_VERSION ${{ matrix.duckdb_arch }} $BUCKET_NAME ${{inputs.deploy_latest || 'true' && 'false'}} ${{inputs.deploy_versioned || 'true' && 'false'}}
+          # Post-upload check (#9): download every object the deploy script
+          # just uploaded (per its manifest) and confirm it is byte-identical
+          # to the artifact its pre-upload gate verified. Native archs exit 0
+          # immediately.
+          ./scripts/extension-verify-upload.sh ${{ inputs.extension_name }} ${{ matrix.duckdb_arch }}

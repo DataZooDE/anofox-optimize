@@ -27,46 +27,54 @@ const datazoo::BannerInfo ANOFOX_OPTIMIZE_BANNER {
 
 namespace duckdb {
 
-#ifdef ANOFOX_TELEMETRY_ENABLED
-
 namespace {
 
 void OnTelemetryEnabled(ClientContext &context, SetScope scope, Value &parameter) {
 	if (parameter.IsNull()) {
 		throw InvalidInputException("anofox_telemetry_enabled cannot be NULL");
 	}
+#ifdef ANOFOX_TELEMETRY_ENABLED
 	PostHogTelemetry::Instance().SetEnabled(BooleanValue::Get(parameter));
+#endif
 }
 
 void OnTelemetryKey(ClientContext &context, SetScope scope, Value &parameter) {
 	if (parameter.IsNull()) {
 		throw InvalidInputException("anofox_telemetry_key cannot be NULL");
 	}
+#ifdef ANOFOX_TELEMETRY_ENABLED
 	PostHogTelemetry::Instance().SetAPIKey(StringValue::Get(parameter));
+#endif
 }
 
 } // anonymous namespace
 
 //! Same two options every anofox extension exposes, so one SET turns
-//! telemetry off across all of them in a session.
+//! telemetry off across all of them in a session. Registered in builds
+//! without telemetry too (wasm, MinGW), where they change nothing: the
+//! documented opt-out must not fail there.
 static void RegisterTelemetryOptions(ExtensionLoader &loader) {
+#ifdef ANOFOX_TELEMETRY_ENABLED
+	constexpr bool compiled_in = true;
+#else
+	constexpr bool compiled_in = false;
+#endif
 	auto &config = DBConfig::GetConfig(loader.GetDatabaseInstance());
 	config.AddExtensionOption("anofox_telemetry_enabled",
-	                          "Enable or disable anonymous usage telemetry",
-	                          LogicalType::BOOLEAN, Value::BOOLEAN(true), OnTelemetryEnabled);
+	                          "Enable or disable anonymous usage telemetry (no effect in builds without telemetry: "
+	                          "wasm and MinGW, where it defaults to false)",
+	                          LogicalType::BOOLEAN, Value::BOOLEAN(compiled_in), OnTelemetryEnabled);
 	config.AddExtensionOption("anofox_telemetry_key", "PostHog API key for telemetry",
 	                          LogicalType::VARCHAR,
 	                          Value("phc_t3wwRLtpyEmLHYaZCSszG0MqVr74J6wnCrj9D41zk2t"),
 	                          OnTelemetryKey);
 }
 
-#endif // ANOFOX_TELEMETRY_ENABLED
-
 static void LoadInternal(ExtensionLoader &loader) {
 	// Before anything registers, so the contract tags only this extension's functions.
 	const auto preexisting = SnapshotSystemFunctionNames(loader);
-#ifdef ANOFOX_TELEMETRY_ENABLED
 	RegisterTelemetryOptions(loader);
+#ifdef ANOFOX_TELEMETRY_ENABLED
 
 	// Identify the PRODUCT, not just the function. Without this every
 	// event carried an empty product envelope: RecordFunctionCall showed

@@ -73,13 +73,68 @@ jobs:
       duckdb_version: v1.5.6
       extension_name: anofox_optimize
 
+  # A green wasm build only proves the extension COMPILES + LINKS. This job
+  # proves it LOADs and RUNS in DuckDB-Wasm (#9: every published wasm artifact
+  # failed LOAD, on unresolved OpenSSL imports and a duplicate duckdb_signature
+  # section, and nothing in CI noticed). It runs test/wasm/run.mjs -- the whole
+  # test/sql suite -- against the wasm_eh artifact the build job produced.
+  # Stays on the v1.5.6 line: the newest @duckdb/duckdb-wasm (1.33.1-dev65.0)
+  # bundles engine v1.5.6, and DuckDB-Wasm rejects an extension built for a
+  # different engine. When a duckdb-wasm build bundling v2.0.0 ships, bump
+  # test/wasm/package.json, `needs` and the artifact name together.
+  duckdb-latest-wasm-runtime-test:
+    name: WASM runtime test (Node harness, v1.5.6 wasm_eh)
+    needs: duckdb-latest-build
+    # !cancelled(), not result == 'success': the build job fails as a whole when
+    # any arch fails, and an unrelated Windows failure must not skip this test
+    # (which would then block every deploy). A missing wasm_eh artifact fails
+    # the download step below instead.
+    if: ${{ !cancelled() }}
+    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        # Submodules not needed: the harness uses test/ and the downloaded .wasm.
+
+      - name: Download built wasm_eh extension
+        uses: actions/download-artifact@v4
+        with:
+          name: anofox_optimize-v1.5.6-extension-wasm_eh
+          path: wasm-artifact
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: test/wasm/package-lock.json
+
+      - name: Install harness dependencies
+        run: npm --prefix test/wasm ci --ignore-scripts
+
+      - name: Section walker and comparator self-tests
+        run: |
+          python3 scripts/wasm_signature_sections.py --self-test
+          node test/wasm/sqllogic.mjs --self-test
+
+      - name: Run DuckDB-Wasm load + runtime harness
+        run: |
+          EXT=$(find wasm-artifact -name 'anofox_optimize.duckdb_extension.wasm' | head -1)
+          if [ -z "$EXT" ]; then echo "::error::built wasm extension not found in artifact"; exit 1; fi
+          echo "Testing extension: $EXT"
+          python3 scripts/wasm_signature_sections.py check "$EXT"
+          node test/wasm/run.mjs --ext "$EXT"
+
   duckdb-latest-deploy:
     name: Deploy extension binaries (v1.5.6)
-    needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup]
+    needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup, duckdb-latest-wasm-runtime-test]
     # Run the deploy step even when a non-essential build matrix entry fails.
     # The deploy job itself fans out per arch and only pushes the artifacts
-    # that actually exist.
-    if: ${{ !cancelled() }}
+    # that actually exist. The wasm runtime test is the exception: a wasm
+    # artifact that does not LOAD must not ship (#9), so its failure blocks
+    # the deploy -- of every arch, native included. That is deliberate (the
+    # maintainer's call on #9), not an oversight next to the non-gating smoke
+    # and pickup jobs.
+    if: ${{ !cancelled() && needs.duckdb-latest-wasm-runtime-test.result == 'success' }}
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:
