@@ -9,11 +9,11 @@ Only two functions return a proven optimum, and both say so in their names.
 
 | Function | Guarantee | Cost | Limit |
 |---|---|---|---|
-| `knapsack_exact` | proven optimum | O(n · capacity) | scales with **numeric capacity** |
+| `knapsack_exact` | proven optimum for weights in multiples of 0.0001; finer weights are rounded up (always feasible, optimal for the rounded weights) | O(n · capacity) | scales with **numeric capacity** |
 | `schedule_exact` | proven optimum | exponential | refuses above **14 jobs** |
 
 `knapsack_best_of` runs `knapsack_exact` too whenever the table fits within
-`knapsack_exact`'s limit, and is then the proven optimum. Above the limit it
+`knapsack_exact`'s limit, and then carries the same guarantee. Above the limit it
 returns its best greedy answer without raising, and that answer is not exact.
 
 Everything else is heuristic and carries no guarantee. Some have known

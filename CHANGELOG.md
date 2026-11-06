@@ -2,12 +2,25 @@
 
 ## Unreleased
 
+### Changed
+
 - `knapsack_best_of` also runs the exact DP whenever `knapsack_exact`'s table fits
-  (items × (capacity + 1) ≤ 50 million in whole units), so it is the proven optimum there; above the
+  (items × (capacity + 1) ≤ 50 million in whole units), so it is the proven optimum there for weights in multiples of 0.0001; above the
   limit it still returns the best greedy answer without raising. `knapsack_by`'s default `['best_of']`
   is therefore exact on small instances — on a five-crate fixture it went from 31 to the optimum of 36.
-  Both functions share one limit check. Inside the limit, `best_of` now costs about 10 ns per table cell
-  rather than microseconds per row.
+  Both functions share one limit check. Inside the limit, `best_of` now costs about 5 ns per table cell
+  rather than microseconds per row; it skips the DP when greedy provably is the optimum (every
+  positive-value item fits, or the best-ratio prefix fills the capacity exactly), which helps only on
+  such instances.
+
+### Fixed
+
+- **`knapsack_exact` could return an over-capacity answer.** Weights not whole at the 10^4 scale were
+  rounded to NEAREST inside the DP table, so items could weigh less there than they really do:
+  `opt_knapsack_exact([1.0, 1.0], [0.00004, 0.00004], 0.00007)` took both, 8e-05 against a capacity of
+  7e-05. Such weights are now rounded UP (and the capacity down), so every answer fits; it is the proven
+  optimum when weights and capacity are multiples of 0.0001, and optimal for the rounded-up weights
+  otherwise. `total_weight` is still the sum of the original weights.
 
 ## v2026.10.26
 
