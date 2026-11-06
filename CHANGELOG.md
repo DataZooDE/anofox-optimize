@@ -1,8 +1,13 @@
 # Changelog
 
-## Unreleased
+## v2026.11.6
 
-The wasm build loads in DuckDB-Wasm (#9). Every published wasm artifact had failed `LOAD`. The other families' decisions plot too: anofox-visualization v2026.11.5 has a schema for each.
+The wasm build loads in DuckDB-Wasm (#9), and the community registry builds `wasm_eh` and, again, DuckDB
+v1.5.6 (#8). Every published wasm artifact had failed `LOAD`. `knapsack_best_of`, and so `knapsack_by`'s
+default, is exact wherever `knapsack_exact` can solve the instance, and no knapsack function returns an
+over-capacity answer any more. The knapsack, sequence, assortment and portfolio decisions plot too
+(#19, #20). They render correctly once anofox-visualization ships DataZooDE/anofox-visualization#1001;
+v2026.11.5 facets every producer's plot, these and `pack_by`/`wave_by` alike, by `row_order`.
 
 ### Added
 
