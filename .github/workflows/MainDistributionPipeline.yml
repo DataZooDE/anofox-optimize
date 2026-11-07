@@ -124,6 +124,57 @@ jobs:
           python3 scripts/wasm_signature_sections.py check "$EXT"
           node test/wasm/run.mjs --ext "$EXT"
 
+  # Builds the way a developer does on the newest runner image: plain
+  # `make release` with the image's own GCC, CMake and shared system OpenSSL,
+  # no vcpkg. The distribution matrix never takes this path (it builds inside
+  # manylinux containers with vcpkg's OpenSSL), so an image-only break would
+  # stay invisible there. ubuntu-latest moved to 26.04 (GCC 15.2, CMake 4.x,
+  # OpenSSL 3.5.5) and broke the static-OpenSSL builds of anofox-scenario and
+  # anofox-forecast; this job is the cheap guard that makes the next such
+  # break show up in CI here first. The image is pinned, not ubuntu-latest,
+  # so the job keeps meaning "26.04" after the next label move.
+  # Runs on every trigger, like every other job in this pipeline. Blocking
+  # (no continue-on-error), but nothing `needs` it, so it never holds up a
+  # deploy.
+  linux-make-ubuntu-2604:
+    name: Linux non-vcpkg build (ubuntu-26.04, make release)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    env:
+      GEN: ninja
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: 'recursive'
+
+      # What a developer installs on a fresh 26.04 machine (README "Building
+      # from source": pure C++, no Rust). Most of it ships with the runner
+      # image; listing it keeps the job honest if the image slims down.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq build-essential cmake ninja-build git ccache libssl-dev
+          gcc --version | head -1; cmake --version | head -1; openssl version
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: linux-make-ubuntu-26.04-${{ github.job }}
+          max-size: 1G
+
+      - name: Build (release, no vcpkg)
+        run: make release
+
+      - name: Smoke test
+        run: ./build/release/duckdb -c "SELECT CASE WHEN loaded THEN 'anofox_optimize ' || opt_version() ELSE error('anofox_optimize not loaded') END FROM duckdb_extensions() WHERE extension_name = 'anofox_optimize'"
+
+      # The whole sqllogictest suite takes seconds once built, and it is what
+      # catches a compiler-behaviour change (a new GCC miscompiling a solver)
+      # rather than only a toolchain break.
+      - name: SQL tests
+        run: make test
+
   duckdb-latest-deploy:
     name: Deploy extension binaries (v1.5.6)
     needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup, duckdb-latest-wasm-runtime-test]
