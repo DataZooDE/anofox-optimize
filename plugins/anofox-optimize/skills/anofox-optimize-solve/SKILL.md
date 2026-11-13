@@ -48,6 +48,9 @@ Two ways to run a family:
 6. **The last column is always `row_order`** (1..n in the producer's own
    order). Sort by it to keep the producer's order: `ORDER BY row_order`.
 7. **Do not mix up the assortment families** — see `anofox-optimize-formulate`.
+8. **In the browser, use DuckDB-Wasm v2.0.0** (shell.duckdb.org). The community
+   v1.5.6 wasm build currently fails to LOAD in a v1.5.6 DuckDB-Wasm host
+   (anofox-optimize#28); native installs and v2.0.0 Wasm are fine.
 
 ## The long forms
 

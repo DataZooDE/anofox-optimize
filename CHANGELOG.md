@@ -24,6 +24,13 @@
   since v2026.11.7. Signature-only snippets are `text` blocks, and the README's plot example
   installs anofox_visualization and packs `cartons` at the capacity the rest of the README uses.
 
+### Known issues
+
+- The community **v1.5.6 wasm** build does not LOAD in a v1.5.6 DuckDB-Wasm host
+  (#28: community-extensions builds the v1.5.6 line with the v2.0 ci-tools, an i64 ABI
+  mismatch). v2.0.0 Wasm and native are fine. A weekly `Community wasm check` job runs the
+  harness on the community artifact and turns green when it is fixed upstream.
+
 ## v2026.11.7
 
 **Breaking:** `knapsack_exact` is an alias of `knapsack_best_of` and no longer raises past its limits. A bin, wave or
