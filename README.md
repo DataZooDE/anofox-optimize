@@ -3,11 +3,20 @@
 [![Main Extension Distribution Pipeline](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml/badge.svg)](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml)
 [![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.6%20%7C%20v2.0.0-blue)](https://duckdb.org)
 [![License](https://img.shields.io/badge/license-BSL%201.1-green)](LICENSE)
+[![Claude Code](https://img.shields.io/badge/Claude_Code-AI_skills_plugin-D97757)](#claude-code-skills)
 
 **Combinatorial decision algorithms as DuckDB functions.** Pack containers,
 choose an assortment, sequence a machine, allocate a portfolio — in SQL,
 against the tables the data already lives in. No solver process, no external
 service, no modelling language.
+
+> **Built for AI pair-programming.** anofox-optimize ships an installable
+> **Claude Code plugin**: five skills that take an assistant from a business
+> problem to the right family, the right table shape, a solved and checked
+> decision, and a chart. Install with
+> `/plugin marketplace add DataZooDE/anofox-optimize` →
+> `/plugin install anofox-optimize@anofox-optimize`.
+> See [Claude Code skills](#claude-code-skills).
 
 ```sql
 INSTALL anofox_optimize FROM community;
@@ -140,13 +149,38 @@ SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 
   the producers.
 - Plan and details: [docs/ANOFOX_CONTRACT_PLAN.md](docs/ANOFOX_CONTRACT_PLAN.md).
 
+## Claude Code skills
+
+```text
+/plugin marketplace add DataZooDE/anofox-optimize
+/plugin install anofox-optimize@anofox-optimize
+```
+
+The skills follow the work rather than the function list (the list is in
+`duckdb_functions()` already) and load on their own when a conversation needs them:
+
+| Skill | Covers |
+|---|---|
+| `anofox-optimize-formulate` | business problem → family and member; cannibalisation vs recapture; sequencing vs scheduling |
+| `anofox-optimize-data-prep` | ordered lists, 1-based results, `opt_matrix_from_triples`, the (n+1)² schedule matrix, pairs tables |
+| `anofox-optimize-solve` | the `*_by` long forms per group and algorithm, scalar solvers, joining back to rows |
+| `anofox-optimize-evaluate` | `*_objectives_by`, feasibility checks, bounds, exact and weak members, tests that can fail |
+| `anofox-optimize-visualize` | `anofox_plot` with anofox-visualization, the contract schemas, discovery tags |
+
+They live in [`plugins/anofox-optimize/`](plugins/anofox-optimize/); in a clone, load
+them with `claude --plugin-dir ./plugins/anofox-optimize`. `make check-docs` runs
+every SQL example in them against the built extension, so a renamed function, a
+changed signature or an uncovered new member fails the build.
+See [Using With Claude Code](docs/guides/05-using-with-claude-code.md).
+
 ## Documentation
 
 **Guides** — how to use it:
 [Getting Started](docs/guides/01-getting-started.md) ·
 [Choosing a Family](docs/guides/02-choosing-a-family.md) ·
 [Working With Your Tables](docs/guides/03-working-with-your-tables.md) ·
-[Validating Results](docs/guides/04-validating-results.md)
+[Validating Results](docs/guides/04-validating-results.md) ·
+[Using With Claude Code](docs/guides/05-using-with-claude-code.md)
 
 **Theory** — how it works behind the curtain:
 [How It Works](docs/theory/01-how-it-works.md) ·

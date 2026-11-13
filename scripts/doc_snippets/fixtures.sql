@@ -77,3 +77,35 @@ SELECT p, d, w, s, n,
        (SELECT list(size ORDER BY item_id) FROM items) AS sizes,
        1000.0 AS cap
 FROM jobs_input;
+
+-- setup_costs_pairs(from_id, to_id, value): setup_costs as the pairs table sequence_by takes.
+CREATE TABLE setup_costs_pairs AS
+SELECT from_job AS from_id, to_job AS to_id, cost AS value FROM setup_costs;
+
+-- orders(order_id, lines, priority): pick-wave orders.
+CREATE TABLE orders AS
+SELECT * FROM (VALUES (101, 12.0, 5.0), (102, 30.0, 1.0), (103, 8.0, 3.0), (104, 25.0, 2.0),
+                      (105, 5.0, 4.0), (106, 18.0, 5.0), (107, 22.0, 1.0), (108, 9.0, 2.0))
+       AS t(order_id, lines, priority);
+
+-- products(sku, margin, demand) and substitution(from_id, to_id, value): a shelf where
+-- a high-margin, low-demand product is worth a slot only as a recapture sink.
+CREATE TABLE products AS
+SELECT * FROM (VALUES ('A', 5.0, 100.0), ('B', 3.0, 120.0), ('C', 8.0, 20.0),
+                      ('D', 4.0, 90.0), ('E', 2.0, 150.0), ('F', 6.0, 40.0))
+       AS t(sku, margin, demand);
+CREATE TABLE substitution AS
+SELECT * FROM (VALUES ('A', 'C', 0.6), ('B', 'C', 0.5), ('D', 'C', 0.4), ('E', 'F', 0.5),
+                      ('A', 'B', 0.2), ('B', 'A', 0.2), ('D', 'A', 0.3), ('E', 'B', 0.3))
+       AS t(from_id, to_id, value);
+
+-- assets(ticker, expected_return) and covariance(from_id, to_id, value), each pair once.
+CREATE TABLE assets AS
+SELECT * FROM (VALUES ('AAA', 0.10), ('BBB', 0.08), ('CCC', 0.12), ('DDD', 0.07), ('EEE', 0.09))
+       AS t(ticker, expected_return);
+CREATE TABLE covariance AS
+SELECT * FROM (VALUES ('AAA', 'AAA', 0.040), ('BBB', 'BBB', 0.030), ('CCC', 'CCC', 0.060),
+                      ('DDD', 'DDD', 0.020), ('EEE', 'EEE', 0.035),
+                      ('AAA', 'BBB', 0.006), ('AAA', 'CCC', 0.030), ('BBB', 'CCC', 0.004),
+                      ('CCC', 'EEE', 0.007), ('DDD', 'EEE', 0.002))
+       AS t(from_id, to_id, value);

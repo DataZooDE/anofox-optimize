@@ -117,6 +117,14 @@ docs:
     survivors when you delist. And `sequence_*` and `schedule_*` both order
     jobs, but only `schedule_*` knows about due dates.
 
+    ### Claude Code plugin
+
+    The repository is also a Claude Code plugin marketplace:
+    `/plugin marketplace add DataZooDE/anofox-optimize`, then
+    `/plugin install anofox-optimize@anofox-optimize`. Five skills (formulate,
+    data-prep, solve, evaluate, visualize) take an assistant from a business
+    problem to a solved, checked and plotted decision.
+
     ### Testing
 
     The suite asserts against optima computed **outside** the extension:

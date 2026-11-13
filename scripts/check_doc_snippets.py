@@ -60,6 +60,7 @@ BACKTICK_IDENT_RE = re.compile(r"`(" + NAME + r")`")
 CALL_IDENT_RE = re.compile(r"\b(" + NAME + r")\s*\(")
 RELEASE_RE = re.compile(r"^## v(\d{4}\.\d{1,2}\.\d{1,2})\b", re.M)
 VERSION_FM_RE = re.compile(r"^version:\s*(\S+)\s*$", re.M)
+HEADER_VERSION_RE = re.compile(r"^\*\*Extension:\*\* `anofox_optimize` v([0-9.]+)", re.M)
 
 
 def read_text(path):
@@ -215,6 +216,8 @@ def plugin_checks(canonical):
     for path in skill_files:
         m = VERSION_FM_RE.search(read_text(path).split("\n---", 1)[0])
         versions[os.path.relpath(path, REPO_ROOT)] = m.group(1) if m else None
+        h = HEADER_VERSION_RE.search(read_text(path))
+        versions[os.path.relpath(path, REPO_ROOT) + " (header)"] = h.group(1) if h else None
     for rel, got in versions.items():
         if got != want:
             failures.append((rel, f"version {got} != newest CHANGELOG release {want}"))
