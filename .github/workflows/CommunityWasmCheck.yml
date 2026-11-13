@@ -1,0 +1,45 @@
+# Does the wasm build that `INSTALL anofox_optimize FROM community` serves
+# actually LOAD in DuckDB-Wasm? The pre-deploy wasm test only covers our own
+# build; the community build uses community-extensions' toolchain, which
+# broke the v1.5.6 line (#28: built with the v2.0 ci-tools / emsdk 6.0.9, an
+# i64 ABI mismatch against the v1.5.6 DuckDB-Wasm host). This job runs the same
+# harness (scripts/verify-wasm-artifact.sh) on the community artifact.
+#
+# Expected to FAIL until #28 is fixed upstream; when it turns green, update the
+# README "DuckDB-Wasm" note and close #28. Not part of any deploy.
+name: Community wasm check
+
+on:
+  schedule:
+    - cron: '17 6 * * 1'   # Mondays 06:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  community-wasm-v156:
+    name: Community v1.5.6 wasm_eh loads in DuckDB-Wasm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: test/wasm/package-lock.json
+
+      - name: Install harness dependencies
+        run: npm --prefix test/wasm ci --ignore-scripts
+
+      - name: Download the community artifact
+        run: |
+          mkdir -p community
+          curl -fsSL -o community/anofox_optimize.duckdb_extension.wasm \
+            https://community-extensions.duckdb.org/v1.5.6/wasm_eh/anofox_optimize.duckdb_extension.wasm
+          ls -l community/
+
+      - name: LOAD + smoke test in the DuckDB-Wasm harness (see #28)
+        run: ./scripts/verify-wasm-artifact.sh community/anofox_optimize.duckdb_extension.wasm wasm_eh v1.5.6

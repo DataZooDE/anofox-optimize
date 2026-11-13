@@ -203,6 +203,13 @@ make test
 
 Pure C++ — no Rust toolchain required. Built against DuckDB v1.5.6 and v2.0.0.
 
+**DuckDB-Wasm:** the community build loads in DuckDB-Wasm v2.0.0
+([shell.duckdb.org](https://shell.duckdb.org)). The community's **v1.5.6** wasm
+build currently does not load in a v1.5.6 DuckDB-Wasm host, because of a
+toolchain mismatch in how it is built
+([#28](https://github.com/DataZooDE/anofox-optimize/issues/28)); use v2.0.0
+in the browser. Native installs are unaffected.
+
 ## Testing
 
 The suite asserts against optima computed **outside** this extension —
