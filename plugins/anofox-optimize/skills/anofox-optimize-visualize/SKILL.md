@@ -77,9 +77,10 @@ SELECT anofox_plot(t) FROM opt_schedule_objectives_by('jobs', 'job', 'minutes', 
 The long forms are ordinary tables, so a text report is plain SQL:
 
 ```sql
--- container fill per bin
-SELECT bin, count(*) AS cartons, sum(size) AS load, any_value(capacity) AS capacity,
-       round(100 * sum(size) / any_value(capacity), 1) AS pct_full
+-- container fill per bin; load summed in item order, as the solver checks it
+SELECT bin, count(*) AS cartons, list_sum(list(size ORDER BY item)) AS load,
+       any_value(capacity) AS capacity,
+       round(100 * list_sum(list(size ORDER BY item)) / any_value(capacity), 1) AS pct_full
 FROM opt_pack_by('cartons', 'carton_id', 'size', 1000.0)
 GROUP BY bin ORDER BY bin;
 ```

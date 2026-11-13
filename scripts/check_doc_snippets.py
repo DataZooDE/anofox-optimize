@@ -15,6 +15,10 @@ Ported from anofox-forecast's scripts/check_doc_snippets.py and extended. Three 
    same version as the newest released `## vYYYY.MM.DD` heading in CHANGELOG.md. A skill that
    lags the extension it describes is the drift this repo's AGENTS.md warns about.
 
+A block also FAILs when it runs but returns a row made only of booleans with one of them
+false: such a row is a check (`... AS within_capacity`), and an example check that reports
+false is a broken example.
+
 Statuses per ```sql block: PASS, FAIL, EXPECTED-ERROR (keyed in doc_snippets/expected_errors.txt;
 the block must still fail), SYNOPSIS (keyed in doc_snippets/synopsis.txt; never run),
 SKIP-NETWORK (INSTALL or a URL; never run). On a full scan a support-file entry that matches
@@ -149,13 +153,13 @@ class DuckDB:
         self.binary = binary
         self.load = f"LOAD '{extension}';" if extension else "LOAD anofox_optimize;"
 
-    def run(self, sql, timeout=120):
+    def run(self, sql, timeout=120, mode="-list"):
         tmp = tempfile.mkdtemp(prefix="doc_snippets_")
         try:
             env = dict(os.environ, HOME=tmp)
             full = "SET autoinstall_known_extensions = false;\n" + self.load + "\n" + sql
             try:
-                r = subprocess.run([self.binary, "-unsigned", "-bail", "-list", "-noheader", ":memory:"], input=full,
+                r = subprocess.run([self.binary, "-unsigned", "-bail", mode, "-noheader", ":memory:"], input=full,
                                    cwd=tmp, capture_output=True, text=True, timeout=timeout, env=env)
                 return r.returncode, r.stdout, r.stderr
             except subprocess.TimeoutExpired:
@@ -169,6 +173,27 @@ class DuckDB:
             print(f"ERROR: {(err.strip() or out.strip())[:500]}", file=sys.stderr)
             sys.exit(2)
         return [line.strip() for line in out.splitlines() if line.strip()]
+
+
+def false_checks(stdout):
+    """Columns that came back false in a row whose every value is a boolean.
+
+    Such a row is a check (`... AS within_capacity`), and a check that returns false must
+    fail the block: a feasibility example that runs but reports false is a broken example,
+    and passing it is how three broken checks once shipped. Rows that mix booleans with
+    other values (`listed`, `selected` next to an item) are decisions, not checks."""
+    failed = []
+    for line in stdout.splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row and all(isinstance(v, bool) for v in row.values()):
+            failed += [k for k, v in row.items() if v is False]
+    return failed
 
 
 def first_error_line(stderr, stdout):
@@ -282,8 +307,11 @@ def main():
                 own = set(CREATE_NAME_RE.findall(strip_sql_comments(block))) & fixture_names
                 drops = [f"DROP TABLE IF EXISTS {n};" for n in sorted(own)]
                 sql = "\n".join([fixtures] + drops + select_required_setup(block, setup_accum, fixture_names) + [block])
-                rc, out, err = db.run(sql)
-                if rc == 0:
+                rc, out, err = db.run(sql, mode="-jsonlines")
+                failed = false_checks(out) if rc == 0 else []
+                if rc == 0 and failed:
+                    add("FAIL", rel, start + 1, first[:100], "check returned false: " + ", ".join(failed))
+                elif rc == 0:
                     add("FAIL" if key in expected_errors else "PASS", rel, start + 1, first[:100],
                         "expected an error but passed" if key in expected_errors else "")
                 elif key in expected_errors:

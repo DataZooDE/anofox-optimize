@@ -74,3 +74,33 @@ SELECT description LIKE '%REFUSES more than 14 jobs%'
 FROM duckdb_functions() WHERE function_name = 'anofox_optimize_schedule_exact';
 ----
 true
+
+# best_of runs only the heuristic members; schedule_exact is NOT among them
+# (it must stay usable at any size). On this 5-job instance best_of pays 55
+# and the proven optimum is 47, so best_of can lose to exact, and the
+# description must say so instead of "never loses to any single member".
+statement ok
+CREATE TABLE s5 AS SELECT
+  [7,5,1,8,7]::DOUBLE[] AS p, [27,18,39,15,18]::DOUBLE[] AS d, [3,4,4,1,1]::DOUBLE[] AS w,
+  [5,6,7,2,9,6, 5,3,5,0,10,4, 7,2,6,5,9,7, 0,8,9,10,6,9, 2,7,3,10,6,1, 7,0,6,10,6,4]::DOUBLE[] AS m,
+  5::BIGINT AS n;
+
+query II
+SELECT opt_schedule_best_of(p,d,w,m,n).total_weighted_tardiness,
+       opt_schedule_exact(p,d,w,m,n).total_weighted_tardiness FROM s5;
+----
+55.0	47.0
+
+query I
+SELECT description LIKE '%does NOT run schedule_exact%' AND description NOT LIKE '%never loses to any single member%'
+FROM duckdb_functions() WHERE function_name = 'anofox_optimize_schedule_best_of';
+----
+true
+
+# local_search swaps any pair AND relocates; the description once still said
+# "adjacent-pair swaps", the version that returned 168 against an optimum of 60.
+query I
+SELECT description LIKE '%RELOCATING%' AND description NOT LIKE '%adjacent-pair%'
+FROM duckdb_functions() WHERE function_name = 'anofox_optimize_schedule_local_search';
+----
+true

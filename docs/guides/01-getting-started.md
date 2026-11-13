@@ -85,8 +85,8 @@ Two things to note, because both are common mistakes:
 | Choose which products to stock | assortment | see below |
 | Choose assets and weights | portfolio | `opt_portfolio_best_of` |
 
-`opt_*_best_of` runs every algorithm in its family and returns the best
-result. Start there; reach for a specific member when you need a particular
+`opt_*_best_of` runs every algorithm in its family (scheduling's leaves out
+the exponential `schedule_exact`) and returns the best result. Start there; reach for a specific member when you need a particular
 speed or behaviour.
 
 **Assortment has two families that are not interchangeable.** Use

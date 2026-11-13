@@ -19,29 +19,38 @@ Every family has constraints that a buggy solver could violate. Check them
 directly — they are cheap.
 
 ```sql
--- packing: every item placed exactly once, no bin over capacity.
--- A bin fits when its sizes, summed in item order, are within capacity:
--- list_sum in item order, not sum(), whose order is undefined.
+-- packing: every item in exactly one valid bin, no empty bin, no bin over
+-- capacity. A bin fits when its sizes, summed in item order, are within
+-- capacity: list_sum in item order, not sum(), whose order is undefined.
+-- Checking only the length is not enough: [1, 0] has the right length,
+-- and bin 0 is never summed.
 WITH r AS (
   SELECT opt_pack_best_of(list(size ORDER BY pos), 1000.0) AS p,
          list(size ORDER BY pos) AS sizes
   FROM ordered_items
 )
 SELECT
-  (SELECT count(*) FROM ordered_items) = len(p.assignment) AS every_item_placed,
-  bool_and(list_sum(list_filter(sizes, lambda s, i: p.assignment[i] = b)) <= 1000.0)
-                                                           AS within_capacity
-FROM r, range(1, p.bins_used + 1) t(b)
-GROUP BY ALL;
+  len(p.assignment) = len(sizes)                                    AS one_bin_per_item,
+  list_bool_and(list_transform(p.assignment,
+      lambda a: a IS NOT NULL AND a BETWEEN 1 AND p.bins_used))      AS bin_ids_valid,
+  len(list_distinct(p.assignment)) = p.bins_used                   AS no_empty_bin,
+  list_bool_and(list_transform(range(1, p.bins_used + 1),
+      lambda b: list_sum(list_filter(sizes, lambda s, i: p.assignment[i] = b)) <= 1000.0))
+                                                                    AS within_capacity
+FROM r;
 ```
 
 ```sql
--- portfolio: at most k holdings, no position over the cap, weights sum to 1
-WITH r AS (SELECT opt_portfolio_best_of(mu, cov, 5, 0.35) AS p FROM inputs)
+-- portfolio: one finite, non-negative weight per asset, at most k holdings,
+-- no position over the cap, weights sum to 1
+WITH r AS (SELECT opt_portfolio_best_of(mu, cov, 5, 0.35) AS p, mu FROM inputs)
 SELECT
+  len(p.weights) = len(mu)                                          AS one_weight_per_asset,
+  list_bool_and(list_transform(p.weights,
+      lambda w: w IS NOT NULL AND isfinite(w) AND w >= -1e-12))     AS weights_valid,
   len(list_filter(p.weights, lambda w: w > 1e-9)) <= 5              AS cardinality_ok,
-  (SELECT bool_and(w <= 0.35 + 1e-9) FROM (SELECT unnest(p.weights) AS w)) AS cap_ok,
-  abs(list_sum(p.weights) - 1.0) < 1e-6                        AS weights_sum_to_one
+  list_max(p.weights) <= 0.35 + 1e-9                                AS cap_ok,
+  abs(list_sum(p.weights) - 1.0) < 1e-6                             AS weights_sum_to_one
 FROM r;
 ```
 
@@ -68,7 +77,8 @@ SELECT
 FROM inputs;
 ```
 
-`schedule_exact` refuses beyond 14 jobs and `knapsack_best_of`'s DP is
+`schedule_best_of` does not run `schedule_exact` and can lose to it, so on
+a small instance run both. `schedule_exact` refuses beyond 14 jobs and `knapsack_best_of`'s DP is
 pseudo-polynomial (past its limits it silently falls back to greedy), so this
 works on a scaled-down version of your problem.
 A heuristic that is near-optimal on small instances is not guaranteed to be
@@ -81,8 +91,11 @@ Some bounds need no solver at all, and they are the most trustworthy check
 you have because they share nothing with the implementation.
 
 ```sql
--- packing: you can never use fewer bins than total volume / capacity
-SELECT ceil(sum(size) / 1000.0) AS lower_bound FROM items;
+-- packing: you can never use fewer bins than total volume / capacity, per
+-- instance (here per warehouse). The tolerance keeps a double total such as
+-- 1.2000000000000002 from raising the bound above a feasible packing.
+SELECT warehouse_id, ceil(sum(size) / 1000.0 - 1e-9) AS lower_bound
+FROM items GROUP BY warehouse_id ORDER BY warehouse_id;
 
 -- knapsack: you can never capture more value than everything, nor exceed capacity
 SELECT sum(value) AS upper_bound, 1000.0 AS capacity FROM candidates;

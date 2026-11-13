@@ -1,5 +1,31 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **`schedule_best_of`'s description overclaimed.** It said it "runs every scheduling algorithm … never loses to
+  any single member", but it deliberately leaves out `schedule_exact` and can lose to it (55 against 47 on a 5-job
+  instance, now in `test/sql/scheduling.test`). The description, the skills and the guides now say so.
+- **`schedule_local_search`'s description understated it.** It still described adjacent-pair swaps, the version
+  that returned 168 against an optimum of 60. The code swaps any pair and relocates jobs.
+- **Skills, after a multi-agent review and a trigger test with business-language prompts:**
+  - `solve` shows both assortment families and asks which one applies, instead of only the recapture one.
+  - `evaluate` no longer compares `captured_margin` across the two assortment families.
+  - Feasibility checks in `evaluate` and guide 04 reject unplaced, out-of-range and empty bins, and invalid
+    portfolio weights. Checks that only compared lengths had passed an assignment of `[1, 0]`.
+  - The packing lower bound is computed per group and with a rounding tolerance.
+  - A long-form feasibility check and recomputations of the schedule and assortment objectives were added.
+  - `as_given` in a `*_by` long form is documented as item-id order, with a scalar example that baselines
+    today's order.
+  - The skills say to join results back through a unique key.
+  - `formulate` no longer says `pack_bin_completion` finds the optimum on triplet instances.
+  - `formulate` and `evaluate` agree on the knapsack DP limits and the baselines.
+  - `formulate`'s description uses business wording instead of function names.
+  - Capacity loads in the examples use the item-order `list_sum`.
+- **`make check-docs` asserts checks.** A block whose result row is made only of booleans fails when one of
+  them is false. Before, an example check that reported false still counted as PASS.
+
 ## v2026.11.13
 
 anofox-optimize is now a **Claude Code plugin** with five workflow skills, and every SQL example in the README, `docs/`

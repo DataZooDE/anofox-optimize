@@ -1,18 +1,17 @@
 ---
 name: anofox-optimize-formulate
 description: >
-  Turning a business decision into the right anofox_optimize DuckDB function:
-  loading trucks / containers / bins, releasing pick waves, choosing which
-  shipments, projects or items fit a budget or capacity, ordering jobs on a
-  line to cut changeovers, scheduling jobs against due dates with setup
-  times, choosing a shelf assortment (products that cannibalise each other
-  versus delisted demand that moves to survivors), and picking assets with a
-  holding limit. Use when a user describes an optimization problem in
-  business terms and needs to know which family (`opt_pack_best_of`,
-  `opt_wave_best_of`, `opt_knapsack_best_of`, `opt_sequence_best_of`,
-  `opt_schedule_best_of`, `opt_assortment_best_of`,
-  `opt_assortment_recapture_best_of`, `opt_portfolio_best_of`) and which
-  member to start with, or when choosing between assortment and
+  Turning a business decision into the right anofox_optimize DuckDB function
+  family and member: loading pallets, cartons or orders onto the fewest
+  trucks / containers / bins; releasing pick waves; choosing which projects,
+  shipments or items fit a budget or capacity (capital allocation); the
+  production sequence on a line to cut changeover or cleaning time;
+  scheduling jobs against due dates with setup times (late orders,
+  tardiness); shelf assortment, range review, SKU rationalisation or
+  delisting (products that cannibalise each other versus delisted demand
+  that moves to the products that stay); picking assets with a holding
+  limit. Use when a user describes such a decision in business terms, asks
+  which approach or family fits, or must choose between assortment and
   assortment_recapture or between sequence and schedule.
 version: 2026.11.13
 user-invocable: false
@@ -46,13 +45,20 @@ theatre slots and a factory sequencing a press line are the same problem.
    costs; do not recommend it as the answer.
 4. **Everything is placed in packing, not in knapsack.** `pack_*` must put
    every item in some bin; `knapsack_*` may leave items out.
-5. **Default to `best_of`.** It runs every member and returns the winner, so
-   it cannot lose to another member. Reach for a named member only for a
-   reason from the table in "Choosing the member".
+5. **Default to `best_of` for a heuristic answer.** It runs the family's
+   members and returns the winner, so it cannot lose to any member it runs.
+   **Scheduling's `best_of` does not run `schedule_exact`** (so it stays usable
+   at any size) and can lose to it: on a 5-job instance `best_of` pays 55
+   where the optimum is 47. With ≤ 14 jobs, run `schedule_exact` as well.
+   Reach for another named member only for a reason from "Choosing the member".
 6. **Only two answers are proven optima, and only within limits.**
    `schedule_exact` (≤ 14 jobs, refuses beyond) and `knapsack_best_of` /
-   `knapsack_exact` (an alias) where its dynamic program ran. Everything else
-   is a heuristic with no guarantee. Say so when presenting a result.
+   `knapsack_exact` (an alias), the knapsack one only when its dynamic
+   program ran: weights in multiples of 0.0001, at most 50 million cells and
+   within `anofox_optimize_knapsack_max_memory`. Past those limits it
+   **silently** returns its best greedy answer. Everything else is a
+   heuristic with no guarantee. Say so when presenting a result; the limits
+   in full are in `anofox-optimize-evaluate`.
 
 ## Decision shape → family
 
@@ -91,8 +97,10 @@ SELECT opt_pack_best_of([448.0, 460.0, 450.0, 337.0, 340.0, 403.0], 1000.0) AS r
 ```
 
 Start with `best_of`. When items combine into exact fills (sizes that sum to
-the capacity in threes), the fit rules miss the optimum and
-`pack_bin_completion` is the member that finds it.
+the capacity in threes), the fit rules do badly and `pack_bin_completion` can
+beat them (11 bins against their 12 on the repository's triplet instance), but
+it is not optimal either: the optimum there is 10. It searches pairs of
+companions per bin, then tops up greedily.
 
 ### Pick-wave release — `wave_*`
 
@@ -103,7 +111,7 @@ opt_wave_<member>(items DOUBLE[], priorities DOUBLE[], capacity DOUBLE)
 
 `items` is each order's work (lines, minutes), `priorities` its urgency.
 Objective: the priority-weighted mean wave (urgent orders early). Members:
-`as_given` (baseline), `priority_first`, `priority_density`, `fewest_waves`
+`as_given` (the order the list is given in), `priority_first`, `priority_density`, `fewest_waves`
 (wrong objective, on purpose), `best_of`.
 
 ```sql
@@ -132,7 +140,8 @@ opt_sequence_<member>(setup_matrix DOUBLE[], n_jobs BIGINT)
   -> STRUCT("order" BIGINT[], total_setup DOUBLE)     -- n×n row-major, setup[i*n+j] = i then j
 ```
 
-Members: `as_given` (the incumbent order), `nearest_neighbour`, `two_opt`, `best_of`.
+Members: `as_given` (the order the list is given in), `nearest_neighbour`,
+`two_opt`, `best_of`. There is no exact sequencing member.
 
 ```sql
 SELECT opt_sequence_best_of([0.0, 4.0, 1.0,  2.0, 0.0, 5.0,  3.0, 1.0, 0.0], 3) AS r;
@@ -214,10 +223,10 @@ SELECT opt_portfolio_best_of([0.10, 0.08, 0.12], [0.04, 0.006, 0.01,  0.006, 0.0
 
 | You need | Use |
 |---|---|
-| The best answer the family can give | `*_best_of` |
+| The best heuristic answer | `*_best_of` (scheduling with ≤ 14 jobs: also `schedule_exact`) |
 | A proven optimum on a small instance | `schedule_exact` (≤ 14 jobs); `knapsack_best_of` where its DP runs |
-| An honest baseline to show what optimizing buys | `pack_next_fit`, `knapsack_greedy_value`, `wave_as_given`, `sequence_as_given`, `schedule_edd`, `assortment_top_margin`, `portfolio_top_return` |
-| To reproduce today's policy | `sequence_as_given`, `wave_as_given` |
+| An honest baseline to show what optimizing buys | `pack_next_fit`, `knapsack_greedy_value`, `wave_as_given`, `sequence_as_given`, `schedule_edd`, `assortment_top_margin` or `assortment_recapture_top_margin` (the same family as the solve), `portfolio_top_return` |
+| To reproduce today's policy | `sequence_as_given`, `wave_as_given` on lists in **today's** order. In a `*_by` long form, `as_given` means item-id order, which is today's order only if the ids sort that way (see `anofox-optimize-evaluate`) |
 | Speed on a very large input | a single greedy member (`pack_first_fit_decreasing`, `knapsack_greedy_ratio`) |
 | To separate "wrong assets" from "wrong weights" | `portfolio_top_return` vs `portfolio_top_return_optimized` |
 
