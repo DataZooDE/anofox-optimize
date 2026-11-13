@@ -10,13 +10,13 @@ description: >
   and the inputs that are rejected. Use when preparing changeover, setup,
   substitution or covariance data, when results come back attached to the
   wrong rows, or when a solver raises about matrix size, ids or values.
-version: 2026.11.7
+version: 2026.11.13
 user-invocable: false
 ---
 
 # Anofox Optimize — Data Prep
 
-**Extension:** `anofox_optimize` v2026.11.7 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 The solvers are scalar functions over lists: they know positions, not your
 keys. Every mistake worth worrying about happens at the boundary between rows

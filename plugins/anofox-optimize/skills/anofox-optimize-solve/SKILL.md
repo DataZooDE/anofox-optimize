@@ -11,13 +11,13 @@ description: >
   the user wants a packing, wave plan, selection, run order, schedule,
   assortment or portfolio computed from a table, for many groups at once, or
   for several algorithms side by side.
-version: 2026.11.7
+version: 2026.11.13
 user-invocable: false
 ---
 
 # Anofox Optimize — Solve Over Your Tables
 
-**Extension:** `anofox_optimize` v2026.11.7 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 Two ways to run a family:
 

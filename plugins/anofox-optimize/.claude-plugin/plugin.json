@@ -1,7 +1,7 @@
 {
   "name": "anofox-optimize",
   "description": "SQL-native combinatorial decision skills for the anofox_optimize DuckDB extension — from a business problem to the right family (packing, pick waves, knapsack, sequencing, scheduling, assortment, portfolio), table preparation, solving per group, feasibility and gap checks, and plotting the decision.",
-  "version": "2026.11.7",
+  "version": "2026.11.13",
   "author": {
     "name": "DataZoo GmbH",
     "url": "https://github.com/DataZooDE"

@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## v2026.11.13
+
+anofox-optimize is now a **Claude Code plugin** with five workflow skills, and every SQL example in the README, `docs/`
+and the skills runs in CI against the packaged extension, gating the v1.5.6 deploy. `schedule_exact`'s description
+now states its real limit (14 jobs, not 16). No solver behavior changed. The community v1.5.6 wasm build still does
+not load in v1.5.6 DuckDB-Wasm (#28, upstream toolchain); use v2.0.0 Wasm in the browser.
 
 ### Added
 
