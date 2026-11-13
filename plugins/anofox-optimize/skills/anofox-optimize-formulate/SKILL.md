@@ -14,13 +14,13 @@ description: >
   `opt_assortment_recapture_best_of`, `opt_portfolio_best_of`) and which
   member to start with, or when choosing between assortment and
   assortment_recapture or between sequence and schedule.
-version: 2026.11.7
+version: 2026.11.13
 user-invocable: false
 ---
 
 # Anofox Optimize — Formulate the Decision
 
-**Extension:** `anofox_optimize` v2026.11.7 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 From "here is my problem" to "this family, this member". Families are named
 after the *shape* of the decision, not the industry: a hospital allocating

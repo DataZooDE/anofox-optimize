@@ -13,13 +13,13 @@ description: >
   optimization result is any good, which algorithm to use, how far a
   heuristic is from optimal, what optimizing saves over today's policy, or
   how to write a test that could actually fail.
-version: 2026.11.7
+version: 2026.11.13
 user-invocable: false
 ---
 
 # Anofox Optimize — Evaluate and Compare
 
-**Extension:** `anofox_optimize` v2026.11.7 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 An optimizer's output looks equally plausible whether it is optimal or badly
 wrong. This library's own scheduling local search once returned 168 on an

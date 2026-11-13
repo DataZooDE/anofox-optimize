@@ -18,7 +18,7 @@
 # `build: cmake`, and OpenSSL comes from this repo's vcpkg.json.
 extension:
   name: anofox_optimize
-  version: 2026.11.7
+  version: 2026.11.13
   description: Combinatorial decision algorithms as SQL — bin packing, knapsack, wave batching, sequencing, scheduling, assortment and portfolio selection
   language: C++
   build: cmake
@@ -36,8 +36,8 @@ extension:
 
 repo:
   github: DataZooDE/anofox-optimize
-  ref: 7d1f61390d76657b25d6d1090eceb26b98a35efc
-  variegata: 7d1f61390d76657b25d6d1090eceb26b98a35efc
+  ref: 108c1cc5eeb9befd7631268c95f4d39c558bbc26
+  variegata: 108c1cc5eeb9befd7631268c95f4d39c558bbc26
 
 docs:
   hello_world: |
