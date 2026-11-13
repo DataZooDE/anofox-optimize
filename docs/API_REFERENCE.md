@@ -5,7 +5,7 @@
 
 Every function below is also callable by a short `opt_` alias —
 `anofox_optimize_pack_best_of` is `opt_pack_best_of`. The aliases are
-registered with `alias_of` and carry no separate documentation, so they
+registered with `alias_of` and carry the same description, so they
 are listed once here rather than twice.
 
 ## anofox_optimize_assortment_best_of
@@ -316,7 +316,7 @@ Example: `anofox_optimize_schedule_edd([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0
 
 `anofox_optimize_schedule_exact(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled set, last job). Weighted tardiness with sequence-dependent setups is NP-hard, so this is exponential: it REFUSES more than 16 jobs with an error naming the heuristic to use instead, rather than running for hours. Use it to check how far a heuristic really is on a small instance. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
+The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled set, last job). Weighted tardiness with sequence-dependent setups is NP-hard, so this is exponential: it REFUSES more than 14 jobs with an error naming the heuristic to use instead, rather than running for hours. Use it to check how far a heuristic really is on a small instance. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_exact([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 

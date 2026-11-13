@@ -101,16 +101,17 @@ Optimization results are easy to trust and hard to verify. Two habits worth
 keeping:
 
 ```sql
--- 1. Feasibility: no container over capacity.
+-- 1. Feasibility: no container over capacity. A container fits when its
+--    sizes, summed in item order, are within capacity: list_sum over the
+--    sizes in order, not sum(), whose order is undefined.
 WITH packed AS (
-    SELECT opt_pack_best_of(list(size ORDER BY carton_id), 1000.0).assignment AS bins,
+    SELECT opt_pack_best_of(list(size ORDER BY carton_id), 1000.0) AS r,
            list(size ORDER BY carton_id) AS sizes
     FROM cartons
 )
-SELECT bool_and(load <= 1000.0) AS all_within_capacity
-FROM (SELECT sum(s) AS load
-      FROM (SELECT unnest(bins) AS b, unnest(sizes) AS s FROM packed)
-      GROUP BY b);
+SELECT bool_and(list_sum(list_filter(sizes, lambda s, i: r.assignment[i] = b)) <= 1000.0)
+         AS all_within_capacity
+FROM packed, range(1, r.bins_used + 1) t(b);
 
 -- 2. A lower bound you can compute yourself: total volume / capacity.
 SELECT ceil(sum(size) / 1000.0) AS cannot_possibly_beat_this FROM cartons;

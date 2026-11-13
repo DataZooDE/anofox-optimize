@@ -65,3 +65,12 @@ SELECT opt_schedule_edd([-1.0]::DOUBLE[], [1.0]::DOUBLE[], [1.0]::DOUBLE[],
                         [0.0,0.0,0.0,0.0]::DOUBLE[], 1);
 ----
 must be >= 0
+
+# The description is where a search learns the exact solver's limit, so it
+# must state the limit the code enforces. It once said 16 while the code
+# refused anything above 14.
+query I
+SELECT description LIKE '%REFUSES more than 14 jobs%'
+FROM duckdb_functions() WHERE function_name = 'anofox_optimize_schedule_exact';
+----
+true

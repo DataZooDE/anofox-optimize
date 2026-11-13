@@ -103,10 +103,11 @@ with no reshaping. Pass several algorithms to compare them: each one becomes a
 `model_id`.
 
 ```sql
+INSTALL anofox_visualization FROM community;
 LOAD anofox_optimize; LOAD anofox_visualization;
 
 -- Containers filled carton by carton, next fit against bin completion.
-SELECT anofox_plot(t) FROM opt_pack_by('cartons', 'carton', 'size', 10.0,
+SELECT anofox_plot(t) FROM opt_pack_by('cartons', 'carton_id', 'size', 1000.0,
     algorithms := ['next_fit', 'bin_completion']) t;
 
 -- A Gantt chart per algorithm; late jobs in red. Setups come from a
@@ -180,7 +181,8 @@ That standard has already paid for itself: it caught a local search returning
 exact.
 
 ```bash
-make test    # 111 assertions across 10 test cases
+make test        # every test/sql/*.test
+make check-docs  # every SQL example in README, docs/ and the skills
 ```
 
 ## Telemetry

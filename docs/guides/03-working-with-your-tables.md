@@ -72,6 +72,7 @@ cost of running job `j-1` after job `i-1`, and row 0 is the cost of running a
 job first. Build it with `n+1` and shift your ids up by one:
 
 ```sql
+-- schedule_setups(from_job, to_job, cost): job ids 1..n, from_job 0 = before the first job
 SELECT opt_matrix_from_triples(
          list(from_job),      -- 0 means "from the virtual start"
          list(to_job),
@@ -79,7 +80,7 @@ SELECT opt_matrix_from_triples(
          (SELECT count(*) FROM jobs) + 1,
          0
        ) AS setup_matrix
-FROM setup_costs;
+FROM schedule_setups;
 ```
 
 ## Optimizing per group
@@ -140,7 +141,7 @@ SELECT opt_schedule_best_of(p, d, w, s, n)."order" FROM jobs_input;
 
 Inputs are `DOUBLE[]`; cast integer columns on the way in:
 
-```sql
+```text
 list(CAST(size AS DOUBLE) ORDER BY pos)
 ```
 
