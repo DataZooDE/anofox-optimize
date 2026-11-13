@@ -468,14 +468,21 @@ void RegisterSchedulingFunctions(ExtensionLoader &loader) {
 	                    "instance." + shape,
 	                    "schedule_exact" + ex);
 	AddSchedulingFamily(loader, "schedule_local_search", TardinessLocalSearch,
-	                    "Sequences by ATCS and then improves with adjacent-pair swaps while "
-	                    "they reduce weighted tardiness. Slower than the dispatch rules and "
-	                    "usually better than any of them alone." + shape,
+	                    "Sequences by ATCS and then improves with two moves while they reduce "
+	                    "weighted tardiness: swapping ANY two jobs, and RELOCATING one job to "
+	                    "any other position (under sequence-dependent setups, moving a job next "
+	                    "to a cheap predecessor is the move that matters). Slower than the "
+	                    "dispatch rules and usually better than any of them alone, but a local "
+	                    "optimum, not a proven one." + shape,
 	                    "schedule_local_search" + ex);
 	AddSchedulingFamily(loader, "schedule_best_of", BestOfSchedule,
-	                    "Runs every scheduling algorithm in this family and returns whichever "
-	                    "had the lowest total weighted tardiness. Costs the sum of the parts "
-	                    "and never loses to any single member." + shape,
+	                    "Runs every HEURISTIC scheduling member (local_search, atcs, edd, wspt) "
+	                    "and returns whichever had the lowest total weighted tardiness. Costs "
+	                    "the sum of the parts and never loses to any of them. It deliberately "
+	                    "does NOT run schedule_exact, so it stays usable at any size and CAN "
+	                    "lose to it: for at most " +
+	                        std::to_string(SCHEDULE_EXACT_MAX_JOBS) +
+	                        " jobs, call schedule_exact for the proven optimum." + shape,
 	                    "schedule_best_of" + ex);
 }
 

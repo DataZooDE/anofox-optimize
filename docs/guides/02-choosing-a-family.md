@@ -29,9 +29,11 @@ problem.
 Every family has the same structure: several named algorithms plus a
 `best_of` that runs them all and returns the winner.
 
-**Default to `best_of`.** It is the only member that cannot lose to another
-member, and for the sizes these functions handle the cost of running all of
-them is rarely the bottleneck.
+**Default to `best_of`.** It cannot lose to any member it runs, and for the
+sizes these functions handle the cost of running all of them is rarely the
+bottleneck. One exception: scheduling's `best_of` does not run
+`schedule_exact` (which is exponential) and can lose to it, so with at most
+14 jobs ask for `schedule_exact` as well.
 
 Reach for a specific member when you need something `best_of` cannot express:
 

@@ -292,7 +292,7 @@ Example: `anofox_optimize_schedule_atcs([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.
 
 `anofox_optimize_schedule_best_of(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Runs every scheduling algorithm in this family and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any single member. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
+Runs every HEURISTIC scheduling member (local_search, atcs, edd, wspt) and returns whichever had the lowest total weighted tardiness. Costs the sum of the parts and never loses to any of them. It deliberately does NOT run schedule_exact, so it stays usable at any size and CAN lose to it: for at most 14 jobs, call schedule_exact for the proven optimum. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_best_of([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 
@@ -324,7 +324,7 @@ Example: `anofox_optimize_schedule_exact([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5
 
 `anofox_optimize_schedule_local_search(['DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', 'DOUBLE[]', BIGINT])` -> `STRUCT("order" BIGINT[], total_weighted_tardiness DOUBLE, makespan DOUBLE)`
 
-Sequences by ATCS and then improves with adjacent-pair swaps while they reduce weighted tardiness. Slower than the dispatch rules and usually better than any of them alone. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
+Sequences by ATCS and then improves with two moves while they reduce weighted tardiness: swapping ANY two jobs, and RELOCATING one job to any other position (under sequence-dependent setups, moving a job next to a cheap predecessor is the move that matters). Slower than the dispatch rules and usually better than any of them alone, but a local optimum, not a proven one. Takes processing_times, due_dates and priorities (one per job) plus the setup matrix flattened ROW-MAJOR over n+1 rows, where index 0 is the VIRTUAL START: setup[i*(n+1)+j] is the cost of running job j-1 after job i-1, and row 0 is the cost of running a job first. Returns a 1-based job order (jobs[order[i]] is the i-th job to run), the total priority-weighted tardiness of that order, and its makespan.
 
 Example: `anofox_optimize_schedule_local_search([10.0,10.0],[20.0,5.0],[1.0,3.0],[5.0,5.0,5.0,0.0,2.0,2.0,0.0,2.0,2.0], 2)`
 

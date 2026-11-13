@@ -149,7 +149,14 @@ own item ids, not positions:
 
 A missing pair is 0 and a duplicate pair raises. Item ids must be unique within
 a group for `schedule_by`, `sequence_by`, `knapsack_by`, `assortment_by`,
-`assortment_recapture_by` and `portfolio_by`.
+`assortment_recapture_by` and `portfolio_by`. `pack_by` and `wave_by` accept
+repeated ids, but then a result row cannot be joined back to one source row:
+when you will join back, pass a unique key as the item column (a primary key,
+or `row_number() OVER (ORDER BY …)` in a `'(SELECT …)'` data string).
+
+The long forms take items in **id order**. Anything that depends on the
+input order (`as_given`, the item-order capacity sum) follows the ids, not
+the table's physical order.
 
 ```sql
 -- a setup pairs table from a changeover log, with the first-job setups as from_id NULL

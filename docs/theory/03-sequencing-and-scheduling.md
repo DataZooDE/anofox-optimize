@@ -80,6 +80,11 @@ in the family.
 
 **`exact`** — the proven optimum, for at most 14 jobs.
 
+**`best_of`** — `local_search`, `atcs`, `edd` and `wspt`, **not** `exact`:
+best_of must stay usable at any size, so it never goes exponential. It can
+therefore lose to `exact` (55 against 47 on a 5-job instance in
+`test/sql/scheduling.test`); ask for `exact` by name when the instance is small.
+
 ### Why the exact solver needs a Pareto frontier
 
 The natural approach is Held-Karp: a state per (set of scheduled jobs, last

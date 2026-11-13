@@ -42,13 +42,25 @@ Two ways to run a family:
    whole table is one instance.
 4. **Ids must be unique per group** for `schedule_by`, `sequence_by`,
    `knapsack_by`, `assortment_by`, `assortment_recapture_by`, `portfolio_by`;
-   pack and wave allow repeats. Items are taken in id order.
+   pack and wave allow repeats, but then a result row cannot be joined back
+   to one source row. Pass a unique key as the item column (a primary key or
+   `row_number()`) whenever you join back. Items are taken in **id order**,
+   so `as_given` in a long form means id order, not today's order.
 5. **`knapsack_exact` is an alias of `knapsack_best_of`** (since v2026.11.7).
    `algorithms := ['exact']` still works and returns what `'best_of'` does.
 6. **The last column is always `row_order`** (1..n in the producer's own
    order). Sort by it to keep the producer's order: `ORDER BY row_order`.
-7. **Do not mix up the assortment families** — see `anofox-optimize-formulate`.
-8. **In the browser, use DuckDB-Wasm v2.0.0** (shell.duckdb.org). The community
+7. **Two assortment families, same arguments, opposite economics. Never pick
+   one by default.** Ask first: when a product is dropped, does its demand
+   vanish, and do listed look-alikes split sales (`opt_assortment_by`,
+   cannibalisation among the listed), or do its buyers move to the products
+   that stay (`opt_assortment_recapture_by`)? Optimizing one while the
+   business works the other way scored below a naive top-margin ranking in
+   6 of 6 live runs. More in `anofox-optimize-formulate`.
+8. **Scheduling's `best_of` does not run `exact`.** With ≤ 14 jobs per group,
+   add `'exact'` to `algorithms` for the proven optimum; `best_of` can lose to
+   it.
+9. **In the browser, use DuckDB-Wasm v2.0.0** (shell.duckdb.org). The community
    v1.5.6 wasm build currently fails to LOAD in a v1.5.6 DuckDB-Wasm host
    (anofox-optimize#28); native installs and v2.0.0 Wasm are fine.
 
@@ -108,19 +120,34 @@ ORDER BY row_order;
 Each group is one machine (`resource`).
 
 ```sql
+-- 10 jobs: small enough for the proven optimum next to the heuristics
 SELECT model_id, position, task, start, "end", tardiness, status
 FROM opt_schedule_by('jobs', 'job', 'minutes', 'due', 'priority',
-                     setup_data := 'changeovers', algorithms := ['edd', 'best_of'])
+                     setup_data := 'changeovers', algorithms := ['edd', 'best_of', 'exact'])
 ORDER BY row_order;
 ```
 
-### Shelf assortment (recapture model)
+### Shelf assortment: pick the model first
+
+Same arguments, different economics (gotcha 7). Demand of a dropped product
+**vanishes** and listed look-alikes split sales → cannibalisation:
+
+```sql
+SELECT item, margin, demand, listed
+FROM opt_assortment_by('products', 'sku', 'margin', 'demand', 'substitution', 3)
+ORDER BY row_order;
+```
+
+Buyers of a dropped product **switch** to one that stays → recapture:
 
 ```sql
 SELECT item, margin, demand, listed
 FROM opt_assortment_recapture_by('products', 'sku', 'margin', 'demand', 'substitution', 3)
 ORDER BY row_order;
 ```
+
+On this table the two shelves differ (`[A, D, E]` against `[A, C, F]`), so
+the choice of model is the decision, not a detail.
 
 ### Portfolio, at most 3 holdings, no position above 50%
 
@@ -139,7 +166,9 @@ FROM opt_pack_by('(SELECT * FROM items WHERE warehouse_id = 1)', 'item_id', 'siz
 
 ## Joining the decision back to your rows
 
-The long forms return your ids, so join on them:
+The long forms return your ids, so join on them, together with the group
+column when there is one. The id must be unique per group (gotcha 4); for a
+nullable group column join with `IS NOT DISTINCT FROM`:
 
 ```sql
 SELECT s.*, k.selected

@@ -50,7 +50,8 @@ Every function has a short `opt_` alias: `anofox_optimize_pack_best_of` and
 Every index a function returns (a bin, a wave, a position in an order) is a
 1-based BIGINT, as in SQL: `items[result.order[k]]` is the *k*-th item.
 
-`opt_*_best_of` runs every algorithm in its family and returns the winner.
+`opt_*_best_of` runs every algorithm in its family and returns the winner
+(scheduling's leaves out the exponential `schedule_exact`).
 Start there.
 
 ## A real example
