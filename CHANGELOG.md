@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- **`make check-docs`** and a CI job of the same name (`Doc snippets`, against the packaged
+  v1.5.6 artifact in the official CLI): every ```sql example in the README and `docs/` runs
+  against the built extension, and every function name they mention must be registered.
+
+### Fixed
+
+- `schedule_exact`'s description said it refuses more than 16 jobs; the code refuses more
+  than 14. The description now takes the number from the code.
+- The feasibility checks in the getting-started and validation guides summed bin loads with
+  an unordered `sum()`; they now use `list_sum` in item order, the rule the solvers follow
+  since v2026.11.7. Signature-only snippets are `text` blocks, and the README's plot example
+  installs anofox_visualization and packs `cartons` at the capacity the rest of the README uses.
+
 ## v2026.11.7
 
 **Breaking:** `knapsack_exact` is an alias of `knapsack_best_of` and no longer raises past its limits. A bin, wave or

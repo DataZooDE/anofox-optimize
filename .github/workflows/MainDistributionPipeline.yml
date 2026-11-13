@@ -175,17 +175,29 @@ jobs:
       - name: SQL tests
         run: make test
 
+  # README, docs/ and the Claude Code skills still describe the binary.
+  # Gates the deploy (see its `if:`), unlike the smoke and pickup jobs.
+  duckdb-latest-doc-snippets:
+    name: Doc snippets (v1.5.6)
+    needs: duckdb-latest-build
+    uses: ./.github/workflows/_doc_snippets.yml
+    with:
+      duckdb_version: v1.5.6
+      extension_name: anofox_optimize
+
   duckdb-latest-deploy:
     name: Deploy extension binaries (v1.5.6)
-    needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup, duckdb-latest-wasm-runtime-test]
+    needs: [duckdb-latest-build, duckdb-latest-smoke-test, duckdb-latest-visualization-pickup, duckdb-latest-wasm-runtime-test, duckdb-latest-doc-snippets]
     # Run the deploy step even when a non-essential build matrix entry fails.
     # The deploy job itself fans out per arch and only pushes the artifacts
     # that actually exist. The wasm runtime test is the exception: a wasm
     # artifact that does not LOAD must not ship (#9), so its failure blocks
     # the deploy -- of every arch, native included. That is deliberate (the
     # maintainer's call on #9), not an oversight next to the non-gating smoke
-    # and pickup jobs.
-    if: ${{ !cancelled() && needs.duckdb-latest-wasm-runtime-test.result == 'success' }}
+    # and pickup jobs. The doc snippets gate too: a README, guide or Claude
+    # Code skill that no longer matches the binary (or a plugin version
+    # behind the newest CHANGELOG release) must not ship with it.
+    if: ${{ !cancelled() && needs.duckdb-latest-wasm-runtime-test.result == 'success' && needs.duckdb-latest-doc-snippets.result == 'success' }}
     uses: ./.github/workflows/_extension_deploy.yml
     secrets: inherit
     with:

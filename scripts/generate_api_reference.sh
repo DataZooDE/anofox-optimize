@@ -19,7 +19,7 @@ DUCKDB="${DUCKDB:-$ROOT/build/release/duckdb}"
   echo
   echo "Every function below is also callable by a short \`opt_\` alias —"
   echo "\`anofox_optimize_pack_best_of\` is \`opt_pack_best_of\`. The aliases are"
-  echo "registered with \`alias_of\` and carry no separate documentation, so they"
+  echo "registered with \`alias_of\` and carry the same description, so they"
   echo "are listed once here rather than twice."
   echo
   "$DUCKDB" -noheader -list -c "

@@ -89,7 +89,7 @@ efficient order that misses them.
 flattened **row-major**. Most tables store these as `(from, to, value)`
 triples, so build the matrix with:
 
-```sql
+```text
 opt_matrix_from_triples(list(from_idx), list(to_idx), list(value), n, index_base)
 ```
 

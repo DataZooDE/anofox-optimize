@@ -1,0 +1,60 @@
+#
+# Reusable workflow: the documentation and the Claude Code skills still describe the binary.
+#
+# Loads the artifact the build job produced into the official DuckDB CLI and runs
+# scripts/check_doc_snippets.py: every ```sql example in README.md, docs/ and
+# plugins/anofox-optimize/skills runs, every function name they mention is registered, and the
+# plugin covers every function at the released version. A description, signature or limit that
+# changes without its docs turns this red, which is the point: anofox-evolve and Claude Code
+# both learn this extension from that text.
+#
+# The examples do not depend on the platform: linux_amd64 only.
+#
+name: Doc Snippets
+
+on:
+  workflow_call:
+    inputs:
+      extension_name:
+        required: true
+        type: string
+      duckdb_version:
+        required: true
+        type: string
+
+jobs:
+  doc-snippets:
+    name: Doc snippets (linux_amd64)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Download extension artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.extension_name }}-${{ inputs.duckdb_version }}-extension-linux_amd64
+          path: ./extension_artifact
+
+      - name: Download the official DuckDB CLI
+        run: |
+          mkdir -p cli
+          python3 -c "import sys; sys.path.insert(0, 'scripts'); from smoke_test import _download_duckdb_cli; print(_download_duckdb_cli('${{ inputs.duckdb_version }}', 'linux_amd64', 'cli'))" | tail -1 > cli/path
+
+      - name: Every example runs, every name resolves
+        run: |
+          python3 scripts/check_doc_snippets.py \
+            --duckdb "$(cat cli/path)" \
+            --extension "$(pwd)/extension_artifact/${{ inputs.extension_name }}.duckdb_extension" \
+            --out doc-snippets.tsv
+
+      - name: Upload the per-block report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: doc-snippets-${{ inputs.duckdb_version }}
+          path: doc-snippets.tsv

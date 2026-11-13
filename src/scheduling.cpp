@@ -17,6 +17,7 @@
 #include <cmath>
 #include <limits>
 #include <numeric>
+#include <string>
 #include <vector>
 
 namespace duckdb {
@@ -459,8 +460,10 @@ void RegisterSchedulingFunctions(ExtensionLoader &loader) {
 	AddSchedulingFamily(loader, "schedule_exact", ExactSchedule,
 	                    "The PROVEN OPTIMUM by Held-Karp dynamic programming over (scheduled "
 	                    "set, last job). Weighted tardiness with sequence-dependent setups is "
-	                    "NP-hard, so this is exponential: it REFUSES more than 16 jobs with an "
-	                    "error naming the heuristic to use instead, rather than running for "
+	                    "NP-hard, so this is exponential: it REFUSES more than " +
+	                        std::to_string(SCHEDULE_EXACT_MAX_JOBS) +
+	                        " jobs with an "
+	                        "error naming the heuristic to use instead, rather than running for "
 	                    "hours. Use it to check how far a heuristic really is on a small "
 	                    "instance." + shape,
 	                    "schedule_exact" + ex);

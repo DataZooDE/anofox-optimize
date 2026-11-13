@@ -19,19 +19,20 @@ Every family has constraints that a buggy solver could violate. Check them
 directly — they are cheap.
 
 ```sql
--- packing: every item placed exactly once, no bin over capacity
+-- packing: every item placed exactly once, no bin over capacity.
+-- A bin fits when its sizes, summed in item order, are within capacity:
+-- list_sum in item order, not sum(), whose order is undefined.
 WITH r AS (
-  SELECT opt_pack_best_of(list(size ORDER BY pos), 1000.0).assignment AS bins,
+  SELECT opt_pack_best_of(list(size ORDER BY pos), 1000.0) AS p,
          list(size ORDER BY pos) AS sizes
   FROM ordered_items
 )
 SELECT
-  (SELECT count(*) FROM ordered_items) = len(bins) AS every_item_placed,
-  (SELECT bool_and(load <= 1000.0)
-     FROM (SELECT sum(s) AS load
-             FROM (SELECT unnest(bins) AS b, unnest(sizes) AS s FROM r)
-            GROUP BY b))            AS within_capacity
-FROM r;
+  (SELECT count(*) FROM ordered_items) = len(p.assignment) AS every_item_placed,
+  bool_and(list_sum(list_filter(sizes, lambda s, i: p.assignment[i] = b)) <= 1000.0)
+                                                           AS within_capacity
+FROM r, range(1, p.bins_used + 1) t(b)
+GROUP BY ALL;
 ```
 
 ```sql
