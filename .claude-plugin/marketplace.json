@@ -1,0 +1,24 @@
+{
+  "name": "anofox-optimize",
+  "owner": {
+    "name": "DataZoo GmbH",
+    "url": "https://github.com/DataZooDE"
+  },
+  "description": "Claude Code skills for anofox_optimize, combinatorial decision algorithms as DuckDB functions.",
+  "plugins": [
+    {
+      "name": "anofox-optimize",
+      "source": "./plugins/anofox-optimize",
+      "description": "SQL-native combinatorial decision skills for the anofox_optimize DuckDB extension — from a business problem to the right family (packing, pick waves, knapsack, sequencing, scheduling, assortment, portfolio), table preparation, solving per group, feasibility and gap checks, and plotting the decision.",
+      "keywords": [
+        "duckdb",
+        "optimization",
+        "operations-research",
+        "sql",
+        "scheduling",
+        "bin-packing",
+        "claude-code"
+      ]
+    }
+  ]
+}

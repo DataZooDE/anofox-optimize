@@ -10,6 +10,7 @@ Task-oriented, copy-pasteable SQL.
 2. [Choosing a Family](guides/02-choosing-a-family.md) — matching your decision shape to a function
 3. [Working With Your Tables](guides/03-working-with-your-tables.md) — lists, matrices, joins, per-group optimization
 4. [Validating Results](guides/04-validating-results.md) — feasibility, bounds, tests that can actually fail
+5. [Using With Claude Code](guides/05-using-with-claude-code.md) — the plugin, its five skills, and how they stay true
 
 ## Theory — how it works behind the curtain
 

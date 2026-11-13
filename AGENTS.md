@@ -65,6 +65,31 @@ option to move away from — hence `opt_pack_next_fit`.
   so a description that overstates the algorithm poisons the search. Say
   what the code does, including its weaknesses.
 
+## Skills
+
+`plugins/anofox-optimize/` is a Claude Code plugin (marketplace manifest in
+`.claude-plugin/`). Its five skills are cut by **workflow stage** —
+formulate, data-prep, solve, evaluate, visualize — not by family: the
+family list is in `duckdb_functions()` already, and the skills carry what the
+catalog cannot, the path from a business problem to a checked decision.
+
+- **Skills must not overclaim either.** They repeat the descriptions and
+  the guides in workflow order; a skill that promises more than the code does
+  misleads an assistant exactly as an overclaiming description misleads a
+  search. Name the weak members and the limits, as the descriptions do.
+- **Change the skill in the same PR** as any signature, description, limit or
+  long-form column it mentions. `make check-docs` (and its CI job) runs every
+  ```sql block in the skills, docs and README against the binary, fails on an
+  unregistered function name and on a function no skill covers.
+- **Bump the version at release:** `plugins/anofox-optimize/.claude-plugin/plugin.json`
+  and every `SKILL.md` carry the newest `## vYYYY.MM.DD` in CHANGELOG.md, and
+  `make check-docs` fails until they do, and the deploy job waits for that
+  check. Run `make bump-plugin` in the release commit, right after writing the
+  CHANGELOG heading. anofox-forecast's skills sat a release behind for weeks
+  with no check to notice.
+- The skills' examples run against `scripts/doc_snippets/fixtures.sql`; add a
+  table there rather than weakening an example, and never to hide a real bug.
+
 ## Conventions
 
 - Canonical `anofox_optimize_*` names with short `opt_*` aliases,

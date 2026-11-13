@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Claude Code plugin** (`/plugin marketplace add DataZooDE/anofox-optimize`,
+  `/plugin install anofox-optimize@anofox-optimize`): five skills cut by workflow
+  stage (`anofox-optimize-formulate`, `-data-prep`, `-solve`, `-evaluate`,
+  `-visualize`) that together cover every function. `make check-docs` runs their
+  examples too, fails on a function no skill covers, and on a plugin version behind
+  the newest release; `make bump-plugin` sets them in the release commit, and the
+  v1.5.6 deploy waits for the check. Guide: [Using With Claude Code](docs/guides/05-using-with-claude-code.md).
 - **`make check-docs`** and a CI job of the same name (`Doc snippets`, against the packaged
   v1.5.6 artifact in the official CLI): every ```sql example in the README and `docs/` runs
   against the built extension, and every function name they mention must be registered.

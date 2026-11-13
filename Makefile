@@ -10,7 +10,7 @@ include extension-ci-tools/makefiles/duckdb_extension.Makefile
 test_visualization:
 	python3 scripts/visualization_pickup.py build/release/extension/anofox_optimize/anofox_optimize.duckdb_extension
 
-.PHONY: audit test_wasm check-docs
+.PHONY: audit test_wasm check-docs bump-plugin
 
 # Build-free checks (#9): the wasm duckdb_signature section walker's self-test,
 # which scripts/extension-upload.sh relies on to guard every wasm upload, and
@@ -31,3 +31,7 @@ test_wasm:
 # against the packaged artifact (.github/workflows/_doc_snippets.yml).
 check-docs:
 	python3 scripts/check_doc_snippets.py
+
+# Release step: set plugin.json and every SKILL.md to the newest CHANGELOG release.
+bump-plugin:
+	./scripts/bump_plugin_version.sh

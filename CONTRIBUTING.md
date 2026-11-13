@@ -21,6 +21,11 @@ Read `AGENTS.md` first — it records the rules that shape this library.
    derives its prompt vocabulary from it. An overstated description
    poisons the search this library exists to help.
 5. Regenerate docs: `./scripts/generate_api_reference.sh`.
+6. **Update the skill that mentions it** in `plugins/anofox-optimize/skills/`
+   (a new member goes in `anofox-optimize-solve`'s member table at least, and
+   in the recipe or comparison where it is the right choice).
+7. Run `make check-docs`: every SQL example in the README, `docs/` and the
+   skills runs against the build, and every function must be covered by a skill.
 
 ## Building
 
