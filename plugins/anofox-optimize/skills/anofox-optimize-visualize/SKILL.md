@@ -17,7 +17,7 @@ user-invocable: false
 
 # Anofox Optimize — Visualize the Decision
 
-**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.1 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 Every `*_by` and `*_objectives_by` long form returns a table in one of the
 anofox integration contract's schemas, which

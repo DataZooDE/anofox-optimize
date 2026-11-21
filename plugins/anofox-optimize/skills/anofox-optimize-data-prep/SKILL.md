@@ -16,7 +16,7 @@ user-invocable: false
 
 # Anofox Optimize — Data Prep
 
-**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.1 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 The solvers are scalar functions over lists: they know positions, not your
 keys. Every mistake worth worrying about happens at the boundary between rows

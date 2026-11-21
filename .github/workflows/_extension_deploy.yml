@@ -18,13 +18,18 @@ on:
       duckdb_version:
         required: true
         type: string
-      # The extension-ci-tools ref (branch/tag) matching duckdb_version. Required
-      # because the rolling patch releases (e.g. v1.5.4) have no matching
-      # extension-ci-tools branch — the codename branches (e.g. v1.5-variegata)
-      # are the canonical targets instead.
+      # The extension-ci-tools ref (branch/tag) the build job used, e.g.
+      # v1.5-variegata or v2.0-cyanoptera. The deploy arch matrix is parsed from
+      # it, NOT from this repo's own extension-ci-tools submodule: the lines ship
+      # different archs (v2.0-cyanoptera no longer builds osx_amd64, v1.5 does),
+      # so a matrix from the wrong line either expects an artifact the build never
+      # produced or silently skips one it did. Falls back to duckdb_version when
+      # empty (rolling patch releases such as v1.5.6 have no matching branch, so
+      # every caller here passes it).
       ci_tools_version:
-        required: true
+        required: false
         type: string
+        default: ""
       # ';' separated list of architectures to exclude, for example: 'linux_amd64;osx_arm64'
       exclude_archs:
         required: false
@@ -61,6 +66,9 @@ jobs:
     name: Generate matrix
     timeout-minutes: 15
     runs-on: ubuntu-latest
+    # Nothing to deploy (PR runs, branch pushes): skip the matrix too, so the
+    # deploy job is skipped rather than parsing a matrix it never uses.
+    if: ${{ inputs.deploy_latest || inputs.deploy_versioned }}
     outputs:
       deploy_matrix: ${{ steps.parse-matrices.outputs.deploy_matrix }}
     steps:
@@ -79,12 +87,16 @@ jobs:
         # Submodules are pinned to one DuckDB version; for a deploy
         # against another line we need the matching tools so the parsed
         # architecture matrix lines up with what that line's build job
-        # produced. Branch first, tag fallback.
+        # produced (ci_tools_version, falling back to duckdb_version).
+        # Branch first, tag fallback.
+        env:
+          REF: ${{ inputs.ci_tools_version != '' && inputs.ci_tools_version || inputs.duckdb_version }}
         run: |
           cd extension-ci-tools
-          git fetch --depth 1 origin ${{ inputs.ci_tools_version }} || \
-            git fetch --depth 1 origin tag ${{ inputs.ci_tools_version }}
+          git fetch --depth 1 origin "$REF" || \
+            git fetch --depth 1 origin tag "$REF"
           git checkout FETCH_HEAD
+          echo "Deploy matrix from extension-ci-tools $REF ($(git rev-parse --short HEAD))"
 
       - id: parse-matrices
         run: |

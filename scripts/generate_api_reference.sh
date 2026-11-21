@@ -22,7 +22,9 @@ DUCKDB="${DUCKDB:-$ROOT/build/release/duckdb}"
   echo "registered with \`alias_of\` and carry the same description, so they"
   echo "are listed once here rather than twice."
   echo
-  "$DUCKDB" -noheader -list -c "
+  # -unsigned: since DuckDB 2.0 the shell does not link the extension statically,
+  # so the LOAD below really loads the (unsigned) local build.
+  "$DUCKDB" -unsigned -noheader -list -c "
     LOAD '$EXT';
     SELECT '## ' || function_name || chr(10) || chr(10) ||
            CASE WHEN function_type = 'table_macro'
