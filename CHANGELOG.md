@@ -1,5 +1,19 @@
 # Changelog
 
+## v2026.11.21
+
+Builds on **DuckDB v2.0.1** (the 2.0 line moves from v2.0.0) and v1.5.6. No solver behavior changed. The 2.0.1
+binaries are now also deployed to get.erpl.io, next to the v1.5.6 ones.
+
+### Changed
+
+- The `duckdb` submodule, and so the local default build, is DuckDB v2.0.1; `extension-ci-tools` follows to
+  `v2.0-cyanoptera`. CI builds, smoke-tests, checks the docs against and deploys both v2.0.1 and v1.5.6 (#32).
+- The deploy arch matrix comes from each line's own extension-ci-tools ref, so the v1.5.6 deploy keeps
+  `osx_amd64`, which the 2.0 line no longer builds (#32).
+- `make check-docs`, `scripts/generate_api_reference.sh` and the ubuntu-26.04 CI smoke step LOAD the built
+  extension file: the DuckDB 2.0 shell no longer links it statically (#32).
+
 ## v2026.11.13
 
 anofox-optimize is now a **Claude Code plugin** with five workflow skills, and every SQL example in the README, `docs/`
