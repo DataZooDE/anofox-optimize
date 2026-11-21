@@ -112,7 +112,7 @@ catalog cannot, the path from a business problem to a checked decision.
   hardcoded constant.
 - Use `duckdb_compat` helpers for DuckDB API differences; no DuckDB-version `#if` at call sites.
 - Scalar callbacks with all-constant inputs must return a `CONSTANT_VECTOR`, including NULL results.
-- BSL 1.1, `datazoo-banner`, DuckDB v1.5.6 and v2.0.0.
+- BSL 1.1, `datazoo-banner`, DuckDB v2.0.1 (submodule, local default) and v1.5.6 (CI).
 
 ## Layout
 

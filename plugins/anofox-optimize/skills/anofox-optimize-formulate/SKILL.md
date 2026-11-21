@@ -20,7 +20,7 @@ user-invocable: false
 
 # Anofox Optimize — Formulate the Decision
 
-**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.1 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 From "here is my problem" to "this family, this member". Families are named
 after the *shape* of the decision, not the industry: a hospital allocating

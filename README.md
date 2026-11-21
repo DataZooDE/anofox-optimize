@@ -1,7 +1,7 @@
 # anofox-optimize
 
 [![Main Extension Distribution Pipeline](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml/badge.svg)](https://github.com/DataZooDE/anofox-optimize/actions/workflows/MainDistributionPipeline.yml)
-[![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.6%20%7C%20v2.0.0-blue)](https://duckdb.org)
+[![DuckDB](https://img.shields.io/badge/DuckDB-v1.5.6%20%7C%20v2.0.1-blue)](https://duckdb.org)
 [![License](https://img.shields.io/badge/license-BSL%201.1-green)](LICENSE)
 [![Claude Code](https://img.shields.io/badge/Claude_Code-AI_skills_plugin-D97757)](#claude-code-skills)
 
@@ -201,7 +201,7 @@ make release        # or: make debug
 make test
 ```
 
-Pure C++ — no Rust toolchain required. Built against DuckDB v1.5.6 and v2.0.0.
+Pure C++ — no Rust toolchain required. Built against DuckDB v2.0.1 (the submodule, so the local default) and v1.5.6 (CI builds both).
 
 **DuckDB-Wasm:** the community build loads in DuckDB-Wasm v2.0.0
 ([shell.duckdb.org](https://shell.duckdb.org)). The community's **v1.5.6** wasm

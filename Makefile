@@ -28,9 +28,10 @@ test_wasm:
 # Every ```sql example in README.md, docs/ and the Claude Code skills runs against the release
 # build, every function name they mention must be registered, and the plugin must cover every
 # function at the released version (scripts/check_doc_snippets.py). CI runs the same check
-# against the packaged artifact (.github/workflows/_doc_snippets.yml).
+# against the packaged artifact (.github/workflows/_doc_snippets.yml). It LOADs the built file:
+# since DuckDB 2.0 (the duckdb submodule) the shell no longer links the extension statically.
 check-docs:
-	python3 scripts/check_doc_snippets.py
+	python3 scripts/check_doc_snippets.py --extension $(PROJ_DIR)build/release/extension/anofox_optimize/anofox_optimize.duckdb_extension
 
 # Release step: set plugin.json and every SKILL.md to the newest CHANGELOG release.
 bump-plugin:

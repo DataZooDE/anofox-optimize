@@ -17,7 +17,7 @@ user-invocable: false
 
 # Anofox Optimize — Solve Over Your Tables
 
-**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.0 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
+**Extension:** `anofox_optimize` v2026.11.13 | **DuckDB:** v1.5.6 / v2.0.1 | **Dual naming:** `anofox_optimize_*` and `opt_*` (true aliases, same description)
 
 Two ways to run a family:
 

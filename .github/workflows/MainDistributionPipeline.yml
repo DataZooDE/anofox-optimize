@@ -19,26 +19,57 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # DuckDB 2.0, the line community-extensions builds `repo.ref` against (v2.0.1 =
+  # commit 8d78114e90). Keep the version in step with community-extensions'
+  # DUCKDB_LATEST_STABLE. reduced_ci_mode is disabled so PR runs build macOS too
+  # and the smoke test finds every artifact.
   duckdb-next-build:
     name: Build extension binaries (DuckDB 2.0)
     uses: duckdb/extension-ci-tools/.github/workflows/_extension_distribution.yml@v2.0-cyanoptera
     with:
-      duckdb_version: v2.0.0
+      duckdb_version: v2.0.1
       ci_tools_version: v2.0-cyanoptera
       extension_name: anofox_optimize
       reduced_ci_mode: disabled
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
 
-  # Loads the packaged 2.0 artifact into the official v2.0.0 CLI (the smoke script
-  # fetches 2.0's duckdb-cli-*.tar.gz assets). No 2.0 deploy: the registry ships 2.0.
+  # Loads the packaged 2.0 artifact into the official v2.0.1 CLI (the smoke script
+  # fetches 2.0's duckdb-cli-*.tar.gz assets).
   duckdb-next-smoke-test:
-    name: Smoke test (v2.0.0)
+    name: Smoke test (v2.0.1)
     needs: duckdb-next-build
     uses: ./.github/workflows/_extension_smoke_test.yml
     with:
-      duckdb_version: v2.0.0
+      duckdb_version: v2.0.1
       extension_name: anofox_optimize
       exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
+
+  # The docs and skills against the 2.0.1 artifact, as for v1.5.6 below.
+  duckdb-next-doc-snippets:
+    name: Doc snippets (v2.0.1)
+    needs: duckdb-next-build
+    uses: ./.github/workflows/_doc_snippets.yml
+    with:
+      duckdb_version: v2.0.1
+      extension_name: anofox_optimize
+
+  # Deploys the 2.0.1 binaries to get.erpl.io, next to the v1.5.6 ones. The
+  # wasm runtime test stays on the v1.5.6 line (see below), so this deploy waits
+  # for the 2.0.1 smoke test and doc snippets instead. Versioned paths only from
+  # tag runs; main pushes update `latest`.
+  duckdb-next-deploy:
+    name: Deploy extension binaries (v2.0.1)
+    needs: [duckdb-next-build, duckdb-next-smoke-test, duckdb-next-doc-snippets]
+    if: ${{ !cancelled() && needs.duckdb-next-smoke-test.result == 'success' && needs.duckdb-next-doc-snippets.result == 'success' }}
+    uses: ./.github/workflows/_extension_deploy.yml
+    secrets: inherit
+    with:
+      duckdb_version: v2.0.1
+      ci_tools_version: v2.0-cyanoptera
+      extension_name: anofox_optimize
+      exclude_archs: 'windows_amd64_rtools;windows_amd64_mingw'
+      deploy_latest: ${{ startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' }}
+      deploy_versioned: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
   duckdb-latest-build:
     name: Build extension binaries (DuckDB latest v1.5.6)
@@ -80,7 +111,7 @@ jobs:
   # test/sql suite -- against the wasm_eh artifact the build job produced.
   # Stays on the v1.5.6 line: the newest @duckdb/duckdb-wasm (1.33.1-dev65.0)
   # bundles engine v1.5.6, and DuckDB-Wasm rejects an extension built for a
-  # different engine. When a duckdb-wasm build bundling v2.0.0 ships, bump
+  # different engine. When a duckdb-wasm build bundling v2.0.1 ships, bump
   # test/wasm/package.json, `needs` and the artifact name together.
   duckdb-latest-wasm-runtime-test:
     name: WASM runtime test (Node harness, v1.5.6 wasm_eh)
@@ -166,8 +197,11 @@ jobs:
       - name: Build (release, no vcpkg)
         run: make release
 
+      # LOAD the built file: since DuckDB 2.0 (the duckdb submodule) the shell no
+      # longer links out-of-tree extensions statically, so without the LOAD
+      # opt_version() does not exist. The local build is unsigned.
       - name: Smoke test
-        run: ./build/release/duckdb -c "SELECT CASE WHEN loaded THEN 'anofox_optimize ' || opt_version() ELSE error('anofox_optimize not loaded') END FROM duckdb_extensions() WHERE extension_name = 'anofox_optimize'"
+        run: ./build/release/duckdb -unsigned -c "LOAD 'build/release/extension/anofox_optimize/anofox_optimize.duckdb_extension'; SELECT CASE WHEN loaded THEN 'anofox_optimize ' || opt_version() ELSE error('anofox_optimize not loaded') END FROM duckdb_extensions() WHERE extension_name = 'anofox_optimize'"
 
       # The whole sqllogictest suite takes seconds once built, and it is what
       # catches a compiler-behaviour change (a new GCC miscompiling a solver)

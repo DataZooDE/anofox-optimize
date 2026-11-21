@@ -84,7 +84,7 @@ bundles, and DuckDB-Wasm rejects an extension built for another engine.
 |---|---|
 | 1.33.1-dev65.0 | v1.5.6 |
 
-No duckdb-wasm build bundles v2.0.0 yet, so the harness and the CI job test the
+No duckdb-wasm build bundles a 2.0 engine yet, so the harness and the CI job test the
 v1.5.6 wasm_eh artifact. When one ships, bump `package.json` (regenerate the
 lock file), `WASM_HARNESS_ENGINE` in `scripts/verify-wasm-artifact.sh`, and the
 `duckdb-latest-wasm-runtime-test` job's `needs` and artifact name together.
