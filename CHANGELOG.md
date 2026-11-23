@@ -1,12 +1,14 @@
 # Changelog
 
-## Unreleased
+## v2026.11.23
+
+Same extension code as v2026.11.21; the DuckDB v1.5.6 binaries now carry the release tag as their version.
 
 ### Fixed
 
-- The DuckDB v1.5.6 binaries report the release tag as their extension version again, not the short commit SHA:
+- The DuckDB v1.5.6 binaries report the release tag as their extension version, not the short commit SHA:
   v1.5.6's `duckdb_extension_generate_version` passes `--match` with literal single quotes, so no tag matched.
-  `extension_config.cmake` now passes `EXTENSION_VERSION` itself when HEAD is on a `vX.Y.Z` tag.
+  `extension_config.cmake` now passes `EXTENSION_VERSION` itself when HEAD is on a `vX.Y.Z` tag (#34).
 
 ## v2026.11.21
 
