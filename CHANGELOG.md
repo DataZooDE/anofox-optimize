@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- The DuckDB v1.5.6 binaries report the release tag as their extension version again, not the short commit SHA:
+  v1.5.6's `duckdb_extension_generate_version` passes `--match` with literal single quotes, so no tag matched.
+  `extension_config.cmake` now passes `EXTENSION_VERSION` itself when HEAD is on a `vX.Y.Z` tag.
+
 ## v2026.11.21
 
 Builds on **DuckDB v2.0.1** (the 2.0 line moves from v2.0.0) and v1.5.6. No solver behavior changed. The 2.0.1
