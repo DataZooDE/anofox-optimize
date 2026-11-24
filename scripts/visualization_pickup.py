@@ -223,8 +223,11 @@ class Pickup:
                 warn = re.search(r'data-warnings="([^"]*)"', auto)
                 self.check(f"{label}: no render warnings", warn is None, warn.group(1) if warn else "")
                 self.check(f"{label}: auto-detected as '{schema}' (same SVG as {macro})", auto == r["specific"])
+                # A series counts as drawn when its name is a label or the tooltip of one of its marks
+                # ("<name>: x: y"): the visualization shortens long axis labels ("greedy_sha…").
+                missing = [m for m in r["models"] if f">{m}<" not in auto and f">{m}: " not in auto]
                 self.check(f"{label}: every algorithm drawn ({', '.join(r['models'])})",
-                           len(r["models"]) >= 2 and all(f">{m}<" in auto for m in r["models"]), str(r["models"]))
+                           len(r["models"]) >= 2 and not missing, f"missing: {missing}")
                 data = json.loads(r["rows"]) if isinstance(r["rows"], str) else r["rows"]
                 values = getattr(self, f"{schema}_values", None)  # summary has no per-value check
                 if values:
